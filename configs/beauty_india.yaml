@@ -1,0 +1,35 @@
+# Pilot configuration: Sephora India vs Nykaa and Tira, beauty/skincare, India.
+# Model names and prices change — verify against each provider's docs and
+# record the check date in docs/DECISION_LOG.md.
+
+project: beauty_india
+market: IN
+language: en
+
+brands:
+  - name: Sephora India
+    is_target: true
+    aliases: ["Sephora", "Sephora India", "sephora.in"]
+  - name: Nykaa
+    is_target: false
+    aliases: ["Nykaa", "Nykaa Fashion", "nykaa.com"]
+  - name: Tira
+    is_target: false
+    aliases: ["Tira", "Tira Beauty", "tirabeauty.com"]
+
+providers:
+  - name: perplexity
+    model: sonar                # VERIFY current Sonar model name
+    enabled: true
+    timeout_s: 60
+    # USD per 1M tokens, plus any per-request fee. Fill from the pricing page.
+    price_input_per_mtok: null
+    price_output_per_mtok: null
+    price_per_request: null
+  - name: openai
+    model: gpt-5-mini           # VERIFY: must support the web_search tool
+    enabled: true
+    timeout_s: 90
+    price_input_per_mtok: null
+    price_output_per_mtok: null
+    price_per_request: null     # web search tool call fee
