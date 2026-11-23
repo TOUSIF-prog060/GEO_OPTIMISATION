@@ -20,7 +20,14 @@ from src.diagnostics import (
 )
 from src.diagnostics.repository import PostgresDiagnosticsRepository, sync_reference
 from src.discovery import DiscoveryInput, run_discovery
-from src.discovery.panel import load_panel, panel_path, sync_brands, sync_prompts
+from src.discovery.models import CUSTOM_PANEL, PromptRow
+from src.discovery.panel import (
+    load_db_prompts,
+    load_panel,
+    panel_path,
+    sync_brands,
+    sync_prompts,
+)
 from src.discovery.repository import PostgresRunRepository
 from src.experimentation import CreateExperimentInput, RetestInput, create_experiment, run_retest
 from src.experimentation.repository import PostgresExperimentRepository
@@ -37,13 +44,24 @@ def discover(
     run_type: str = "baseline",
     settings: Settings | None = None,
     on_progress: Callable[[str, int, int], None] | None = None,
+    custom_prompts: list[PromptRow] | None = None,
 ) -> list[str]:
+    """Run discovery. For the custom prompt set, pass `custom_prompts` (new questions) or
+    `prompt_ids` of custom questions already stored (re-asks, e.g. experiment re-tests)."""
     settings = settings or get_settings()
-    inp = DiscoveryInput(panel_version=panel_version, providers=providers, repeats=repeats,
-                         limit=limit, prompt_ids=prompt_ids, run_type=run_type)  # fmt: skip
     with get_conn() as conn:
         sync_brands(conn, settings.project)
-        sync_prompts(conn, load_panel(panel_path(panel_version)), panel_version)
+        if panel_version == CUSTOM_PANEL:
+            if custom_prompts is None:
+                if not prompt_ids:
+                    raise ValueError("Custom runs need questions or stored prompt_ids")
+                custom_prompts = load_db_prompts(conn, prompt_ids)
+            sync_prompts(conn, custom_prompts, CUSTOM_PANEL)
+        else:
+            sync_prompts(conn, load_panel(panel_path(panel_version)), panel_version)
+        inp = DiscoveryInput(panel_version=panel_version, providers=providers, repeats=repeats,
+                             limit=limit, prompt_ids=prompt_ids, run_type=run_type,
+                             custom_prompts=custom_prompts)  # fmt: skip
         out = run_discovery(inp, settings, PostgresRunRepository(conn), on_progress=on_progress)
     return out.run_ids
 

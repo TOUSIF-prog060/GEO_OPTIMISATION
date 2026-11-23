@@ -190,3 +190,9 @@ thread_id PK · status (running/awaiting_review/completed/failed) · params · s
 design (content_variant / repeat_baseline) · opportunity_id · metric · created_by · notes · completed_at.
 ## experiment_results (added)
 n_baseline · n_retest · ci_low · ci_high (95% Wald CI of retest − baseline) · interpretation (always labelled observational).
+
+## Custom questions (2026-11-24)
+
+- `prompts.panel_version = 'custom'`: questions typed into the dashboard. `prompt_id = 'CUS-' + first 10 hex of sha256(lower-cased, whitespace-collapsed text)`, so the same question always maps to the same prompt and its runs can be compared. `category` is chosen by the user (default `custom`), `intent = 'custom'`.
+- Runs that ask custom questions have `bronze_runs.run_type = 'adhoc'` and `panel_version = 'custom'`. They are measured like any run (Silver and Gold rows) but are excluded from the Overview, which uses `run_type = 'baseline'` only.
+- No schema change: `run_type` already allowed `adhoc`.

@@ -310,7 +310,7 @@ export type Job = {
   kind: string;
   params: Record<string, unknown>;
   status: "queued" | "running" | "done" | "failed";
-  progress: { provider?: string; done?: number; total?: number };
+  progress: { provider?: string; done?: number; total?: number; stage?: string };
   result: unknown;
   error: string | null;
   created_at: string;

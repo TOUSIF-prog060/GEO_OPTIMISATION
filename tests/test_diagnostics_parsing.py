@@ -129,8 +129,12 @@ def test_gemini_citations_use_source_domains() -> None:
                 "content": {"parts": [{"text": "x"}]},
                 "groundingMetadata": {
                     "groundingChunks": [
-                        {"web": {"uri": "https://vertexaisearch.cloud.google.com/r/1",
-                                 "title": "purplle.com"}},  # fmt: skip
+                        {
+                            "web": {
+                                "uri": "https://vertexaisearch.cloud.google.com/r/1",
+                                "title": "purplle.com",
+                            }
+                        },  # fmt: skip
                     ]
                 },
             }

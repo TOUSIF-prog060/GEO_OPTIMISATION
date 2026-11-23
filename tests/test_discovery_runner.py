@@ -130,3 +130,41 @@ def test_no_retry_on_client_error() -> None:
 def test_unknown_provider_rejected() -> None:
     with pytest.raises(ValueError, match="not enabled"):
         plan_discovery(DiscoveryInput(panel_version="v0", providers=["unknown"]), settings())
+
+
+# ---------------------------------------------------------------- custom questions
+
+
+def test_custom_prompt_id_is_stable_and_normalised() -> None:
+    from src.discovery.panel import custom_prompt
+
+    a = custom_prompt("Best  sunscreen in India?")
+    b = custom_prompt("best sunscreen in india?  ")
+    assert a.prompt_id == b.prompt_id and a.prompt_id.startswith("CUS-")
+    assert a.text == "Best sunscreen in India?" and a.category == "custom"
+    assert custom_prompt("Best serum in India?").prompt_id != a.prompt_id
+
+
+def test_custom_prompts_need_custom_panel() -> None:
+    from src.discovery.panel import custom_prompt
+
+    p = custom_prompt("Where to buy Korean skincare in India?")
+    with pytest.raises(ValueError, match="custom"):
+        DiscoveryInput(panel_version="v0", custom_prompts=[p])
+    with pytest.raises(ValueError, match="empty"):
+        DiscoveryInput(panel_version="custom", custom_prompts=[])
+
+
+def test_run_custom_questions_as_adhoc() -> None:
+    from src.discovery.panel import custom_prompt
+
+    prompts = [custom_prompt("Is Sephora India cheaper than Nykaa?"),
+               custom_prompt("Where to buy Huda Beauty in India?")]  # fmt: skip
+    inp = DiscoveryInput(panel_version="custom", providers=["gemini"], run_type="adhoc",
+                         custom_prompts=prompts)  # fmt: skip
+    assert plan_discovery(inp, settings()).n_calls == 2
+    repo = FakeRepo()
+    out = run_discovery(inp, settings(), repo, ask_fns={"gemini": fake_answer})
+    assert out.runs[0].n_ok == 2
+    assert repo.runs[out.run_ids[0]]["run_type"] == "adhoc"
+    assert {r["prompt_id"] for r in repo.responses} == {p.prompt_id for p in prompts}

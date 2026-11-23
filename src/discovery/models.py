@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+CUSTOM_PANEL = "custom"  # prompt set for questions typed in by a user
 
 
 class PromptRow(BaseModel):
@@ -46,6 +48,17 @@ class DiscoveryInput(BaseModel):
     max_workers: int = Field(default=4, ge=1, le=16)
     run_type: str = "baseline"
     notes: str | None = None
+    # Questions typed in by a user instead of a panel CSV (panel_version must be "custom").
+    custom_prompts: list[PromptRow] | None = Field(default=None, max_length=20)
+
+    @model_validator(mode="after")
+    def _custom_needs_custom_panel(self) -> DiscoveryInput:
+        if self.custom_prompts is not None:
+            if self.panel_version != CUSTOM_PANEL:
+                raise ValueError(f"custom_prompts need panel_version='{CUSTOM_PANEL}'")
+            if not self.custom_prompts:
+                raise ValueError("custom_prompts is empty")
+        return self
 
 
 class ProviderRunSummary(BaseModel):

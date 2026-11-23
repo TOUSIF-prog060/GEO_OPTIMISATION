@@ -91,3 +91,8 @@ One entry per decision: date, decision, alternatives considered, reason, owner.
 - **Why an API in between:** the dashboard reuses the tested Python queries and engines instead of re-writing SQL in TypeScript, and the database URL stays server-side. Next.js proxies `/api/*` to FastAPI.
 - **Jobs:** discovery, measuring, drafting, the agent and re-tests run in a 2-worker thread pool and are polled for progress. Jobs are in memory; data is in the database.
 - **Charts:** rates are plotted on a fixed 0–100% axis and ranks from 0 so bar lengths are honest. Brand colours are fixed: Sephora India plum, Nykaa rose, Tira teal.
+
+## 2026-11-24 — Ask your own question
+- **Decision:** the dashboard lets a user type up to 10 questions and pick engines. They go through the normal discovery engine (raw answers stored, retries, lineage) as an `adhoc` run on the `custom` prompt set, then are measured automatically (rules only, free).
+- **Why not a plain chat box:** every answer must be stored and traceable; the stable hash id lets a repeated question be compared over time; `adhoc` keeps one-off questions out of the panel-based headline metrics, which need a fixed question set to be comparable.
+- **Database connection:** switched `SUPABASE_DB_URL` to the Supabase session pooler (IPv4). The direct host is IPv6-only and failed when the local network lost IPv6; hosting platforms also need the pooler.

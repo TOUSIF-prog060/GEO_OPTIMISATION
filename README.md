@@ -192,7 +192,7 @@ A Next.js dashboard (`web/`) talks to a small FastAPI backend (`src/api/`) that 
 | Page | What you see and do |
 |---|---|
 | Overview | A sentence written from your latest data, share of voice per engine as brand swatches, trend, by-engine bars, category heatmap, biggest gaps, pipeline, run costs |
-| 1 Ask the engines | Browse the prompt panel, pick engines, see the billed call count, start a run, measure runs |
+| 1 Ask the engines | **Ask your own question** and compare the engines' answers side by side (brands highlighted, sources listed, measured automatically), re-ask earlier questions; or run the fixed prompt panel |
 | 2 Measure visibility | Mention rate, share of voice, list position, by category; most-cited sites and source types; every answer with brands highlighted and its sources; stability and fact accuracy |
 | 3 Find gaps | Ranked gaps with confidence, effort, Sephora vs benchmark, the evidence answers, approve/reject the action |
 | 4 Draft content | Approved knowledge base, write a grounded draft for a gap, grounding check, sources, approve/reject |

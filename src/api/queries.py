@@ -99,3 +99,19 @@ def list_brands(conn: psycopg.Connection) -> list[dict[str, Any]]:
     return _rows(
         conn.execute("SELECT brand_id, name, is_target, aliases FROM brands ORDER BY brand_id")
     )
+
+
+def list_custom_questions(conn: psycopg.Connection, limit: int = 50) -> list[dict[str, Any]]:
+    """Questions users typed in, newest first, with how often and when they were asked."""
+    return _rows(
+        conn.execute(
+            """
+            SELECT p.prompt_id, p.text, p.category, p.created_at,
+                   count(DISTINCT b.run_id) AS n_runs, max(b.created_at) AS last_asked
+            FROM prompts p LEFT JOIN bronze_responses b USING (prompt_id)
+            WHERE p.panel_version = 'custom'
+            GROUP BY p.prompt_id ORDER BY max(b.created_at) DESC NULLS LAST LIMIT %s
+            """,
+            (limit,),
+        )
+    )

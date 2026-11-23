@@ -40,7 +40,8 @@ from src.diagnostics.repository import (
 )
 from src.diagnostics.validation import evaluate, load_labels, load_system_mentions
 from src.discovery import DiscoveryInput, plan_discovery
-from src.discovery.panel import REFERENCE_DIR, load_panel
+from src.discovery.models import CUSTOM_PANEL, PromptRow
+from src.discovery.panel import REFERENCE_DIR, custom_prompt, load_db_prompts, load_panel
 from src.discovery.providers import get_api_key
 from src.experimentation.repository import list_experiments, load_results
 from src.opportunities.repository import (
@@ -182,6 +183,91 @@ def start_discovery(body: DiscoveryBody, settings: Settings = Cfg) -> Job:
         return {"run_ids": ids}
 
     return jobs.submit("discovery", body.model_dump(), run)
+
+
+class AskBody(BaseModel):
+    """Questions typed in by the user, and/or earlier custom questions to ask again."""
+
+    questions: list[str] = Field(default_factory=list, max_length=10)
+    prompt_ids: list[str] = Field(default_factory=list, max_length=20)
+    category: str = Field("custom", max_length=40)
+    providers: list[str] | None = None
+    repeats: int = Field(1, ge=1, le=5)
+
+
+def _custom_prompts(body: AskBody, conn: psycopg.Connection) -> list[PromptRow]:
+    rows: dict[str, PromptRow] = {}
+    for q in body.questions:
+        if len(q.strip()) < 5:
+            raise HTTPException(400, f"Question too short: {q!r}")
+        if len(q) > 600:
+            raise HTTPException(400, "Questions are limited to 600 characters.")
+        p = custom_prompt(q, category=body.category.strip().lower() or "custom")
+        rows[p.prompt_id] = p
+    if body.prompt_ids:
+        try:
+            for p in load_db_prompts(conn, body.prompt_ids):
+                rows[p.prompt_id] = p
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+    if not rows:
+        raise HTTPException(400, "Type at least one question.")
+    return list(rows.values())
+
+
+@app.post("/api/ask/plan")
+def ask_plan(
+    body: AskBody, settings: Settings = Cfg, conn: psycopg.Connection = Conn
+) -> dict[str, Any]:
+    prompts = _custom_prompts(body, conn)
+    inp = DiscoveryInput(panel_version=CUSTOM_PANEL, providers=body.providers,
+                         repeats=body.repeats, custom_prompts=prompts)  # fmt: skip
+    try:
+        return plan_discovery(inp, settings).model_dump()
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/jobs/ask")
+def start_ask(body: AskBody, settings: Settings = Cfg, conn: psycopg.Connection = Conn) -> Job:
+    """Ask custom questions (billed), then measure the answers (free). Runs are 'adhoc', so
+    they never mix into the panel-based headline numbers."""
+    prompts = _custom_prompts(body, conn)
+    inp = DiscoveryInput(panel_version=CUSTOM_PANEL, providers=body.providers,
+                         repeats=body.repeats, custom_prompts=prompts)  # fmt: skip
+    try:
+        plan = plan_discovery(inp, settings)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if plan.missing_keys:
+        raise HTTPException(400, f"Missing API key(s): {plan.missing_keys}")
+
+    def run(progress: ProgressFn) -> dict[str, Any]:
+        def on_progress(provider: str, done: int, total: int) -> None:
+            progress({"provider": provider, "done": done, "total": total, "stage": "asking"})
+
+        ids = services.discover(CUSTOM_PANEL, body.providers, body.repeats, run_type="adhoc",
+                                custom_prompts=prompts, on_progress=on_progress)  # fmt: skip
+        for i, run_id in enumerate(ids, 1):
+            progress({"stage": "measuring", "done": i, "total": len(ids)})
+            services.diagnose_run(run_id)
+        return {"run_ids": ids, "prompt_ids": [p.prompt_id for p in prompts]}
+
+    return jobs.submit("ask", body.model_dump(), run)
+
+
+@app.get("/api/custom-questions")
+def custom_questions(conn: psycopg.Connection = Conn) -> list[dict[str, Any]]:
+    return queries.list_custom_questions(conn)
+
+
+@app.get("/api/ask/answers")
+def ask_answers(run_ids: str, conn: psycopg.Connection = Conn) -> list[dict[str, Any]]:
+    """Answers of several runs (one per engine), for the side-by-side view."""
+    out: list[dict[str, Any]] = []
+    for run_id in [r for r in run_ids.split(",") if r][:5]:
+        out.extend(queries.list_responses(conn, run_id, 200))
+    return out
 
 
 # ---------------------------------------------------------------- runs & diagnostics

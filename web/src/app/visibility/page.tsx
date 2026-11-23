@@ -14,6 +14,7 @@ import {
   RunSelect,
 } from "@/components/bits";
 import { BrandBars, RankBars } from "@/components/charts";
+import { Highlighted } from "@/components/highlight";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ function useRunParam(runs: Run[] | undefined) {
   const run =
     pick ??
     runs?.find((r) => r.run_id === fromUrl)?.run_id ??
+    runs?.find((r) => r.diagnosed && r.run_type === "baseline")?.run_id ??
     runs?.find((r) => r.diagnosed)?.run_id ??
     runs?.[0]?.run_id;
   const choose = (id: string) => {
@@ -73,27 +75,6 @@ function Metric({
   );
 }
 
-function highlight(text: string, brands: string[]) {
-  // Mark brand names in their swatch colour. Matching is for display only;
-  // the measured mentions come from the diagnostics parser.
-  if (!brands.length) return text;
-  const re = new RegExp(`(${brands.map((b) => b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "gi");
-  return text.split(re).map((part, i) => {
-    const b = brands.find((x) => x.toLowerCase() === part.toLowerCase());
-    return b ? (
-      <mark
-        key={i}
-        className="rounded-[3px] px-0.5 font-medium text-inherit"
-        style={{ background: `color-mix(in oklch, ${brandColor(b)} 22%, transparent)` }}
-      >
-        {part}
-      </mark>
-    ) : (
-      part
-    );
-  });
-}
-
 function Answers({ runId, target }: { runId: string; target: string }) {
   const { data, loading, error } = useApi<ResponseRow[]>(`/runs/${runId}/responses?limit=500`);
   const [q, setQ] = useState("");
@@ -112,7 +93,6 @@ function Answers({ runId, target }: { runId: string; target: string }) {
     const s = q.toLowerCase();
     return !s || r.prompt.toLowerCase().includes(s) || (r.answer_text ?? "").toLowerCase().includes(s);
   });
-  const names = ["Sephora India", "Sephora", "Nykaa", "Tira"];
 
   return (
     <div className="space-y-4">
@@ -192,7 +172,7 @@ function Answers({ runId, target }: { runId: string; target: string }) {
                   ) : (
                     <>
                       <div className="max-w-[75ch] whitespace-pre-wrap text-sm leading-relaxed">
-                        {highlight(r.answer_text ?? "", names)}
+                        <Highlighted text={r.answer_text ?? ""} />
                       </div>
                       {r.citations.length > 0 && (
                         <div className="mt-4">

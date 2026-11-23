@@ -151,3 +151,37 @@ def test_panels_lists_csv_versions(client: TestClient) -> None:
     panels = client.get("/api/panels").json()
     v0 = next(p for p in panels if p["version"] == "v0")
     assert len(v0["prompts"]) == 30
+
+
+def test_ask_custom_questions_runs_then_measures(client: TestClient, monkeypatch) -> None:
+    seen: dict = {}
+
+    def fake_discover(panel, providers, repeats, run_type, custom_prompts, on_progress):
+        seen.update(panel=panel, run_type=run_type, texts=[p.text for p in custom_prompts])
+        on_progress("gemini", 1, 1)
+        return ["run-9"]
+
+    measured: list[str] = []
+    monkeypatch.setattr(main.services, "discover", fake_discover)
+    monkeypatch.setattr(main.services, "diagnose_run", lambda r: measured.append(r))
+    body = {"questions": ["Is Sephora India legit?", "Is Sephora India legit?"],
+            "providers": ["gemini"]}  # fmt: skip
+    plan = client.post("/api/ask/plan", json=body).json()
+    assert plan["n_calls"] == 1  # duplicate question asked once
+    job = client.post("/api/jobs/ask", json=body).json()
+    done = wait(main.jobs, job["job_id"])
+    assert done.status == "done" and done.result["run_ids"] == ["run-9"]
+    assert seen == {"panel": "custom", "run_type": "adhoc", "texts": ["Is Sephora India legit?"]}
+    assert measured == ["run-9"]
+
+
+def test_ask_rejects_empty_and_short(client: TestClient) -> None:
+    assert client.post("/api/jobs/ask", json={"questions": []}).status_code == 400
+    assert client.post("/api/jobs/ask", json={"questions": ["hi"]}).status_code == 400
+
+
+def test_ask_needs_key(client: TestClient) -> None:
+    r = client.post(
+        "/api/jobs/ask", json={"questions": ["Best lipstick?"], "providers": ["openai"]}
+    )
+    assert r.status_code == 400 and "openai" in r.json()["detail"]

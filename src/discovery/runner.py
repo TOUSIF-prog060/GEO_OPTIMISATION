@@ -25,6 +25,7 @@ from src.discovery.models import (
 from src.discovery.panel import load_panel, panel_path, select_prompts
 from src.discovery.providers import (
     AskFn,
+    build_gemini_request,
     build_openai_request,
     build_perplexity_request,
     get_api_key,
@@ -38,7 +39,11 @@ RETRYABLE_STATUS = {408, 409, 429, 500, 502, 503, 504}
 MAX_ATTEMPTS = 3
 BACKOFF_S = 2.0
 
-REQUEST_BUILDERS = {"perplexity": build_perplexity_request, "openai": build_openai_request}
+REQUEST_BUILDERS = {
+    "perplexity": build_perplexity_request,
+    "openai": build_openai_request,
+    "gemini": build_gemini_request,
+}
 
 
 # ---------------------------------------------------------------- planning
@@ -56,6 +61,8 @@ def resolve_providers(inp: DiscoveryInput, settings: Settings) -> list[ProviderC
 
 
 def load_prompts(inp: DiscoveryInput) -> list[PromptRow]:
+    if inp.custom_prompts is not None:
+        return select_prompts(inp.custom_prompts, inp.prompt_ids, inp.limit)
     rows = load_panel(panel_path(inp.panel_version))
     return select_prompts(rows, inp.prompt_ids, inp.limit)
 

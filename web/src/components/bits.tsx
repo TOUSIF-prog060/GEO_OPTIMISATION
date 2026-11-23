@@ -135,7 +135,7 @@ export function StatusPill({ status }: { status: string }) {
 
 export function JobBar({ job }: { job: Job | null }) {
   if (!job) return null;
-  const { done, total, provider } = job.progress ?? {};
+  const { done, total, provider, stage } = job.progress ?? {};
   const value = total ? Math.round(((done ?? 0) / total) * 100) : undefined;
   return (
     <div
@@ -152,9 +152,9 @@ export function JobBar({ job }: { job: Job | null }) {
         )}
         <span className="font-medium capitalize">{job.kind.replaceAll("_", " ")}</span>
         <StatusPill status={job.status} />
-        {provider && total ? (
+        {total ? (
           <span className="num ml-auto text-muted-foreground">
-            {providerLabel(provider)} {done}/{total}
+            {stage === "measuring" ? "Measuring" : provider ? providerLabel(provider) : ""} {done}/{total}
           </span>
         ) : null}
       </div>

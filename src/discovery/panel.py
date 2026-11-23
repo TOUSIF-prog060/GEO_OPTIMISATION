@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import logging
 from pathlib import Path
 
@@ -95,3 +96,27 @@ def sync_prompts(conn: psycopg.Connection, rows: list[PromptRow], panel_version:
     conn.commit()
     logger.info("Synced %d prompts for panel %s", len(rows), panel_version)
     return len(rows)
+
+
+def custom_prompt(text: str, category: str = "custom", intent: str = "custom") -> PromptRow:
+    """A user-typed question as a prompt row. The id is a hash of the normalised text, so
+    asking the same question again reuses the same prompt and runs stay comparable."""
+    clean = " ".join(text.split())
+    digest = hashlib.sha256(clean.lower().encode("utf-8")).hexdigest()[:10]
+    return PromptRow(prompt_id=f"CUS-{digest}", text=clean, category=category or "custom",
+                     intent=intent or "custom")  # fmt: skip
+
+
+def load_db_prompts(conn: psycopg.Connection, prompt_ids: list[str]) -> list[PromptRow]:
+    """Prompts stored in the database (used to re-ask custom questions, which have no CSV)."""
+    cur = conn.execute(
+        "SELECT prompt_id, text, category, intent, language FROM prompts "
+        "WHERE prompt_id = ANY(%s) ORDER BY prompt_id",
+        (prompt_ids,),
+    )
+    rows = [PromptRow(prompt_id=r[0], text=r[1], category=r[2], intent=r[3], language=r[4])
+            for r in cur.fetchall()]  # fmt: skip
+    missing = set(prompt_ids) - {r.prompt_id for r in rows}
+    if missing:
+        raise ValueError(f"Unknown prompt_ids: {sorted(missing)}")
+    return rows
