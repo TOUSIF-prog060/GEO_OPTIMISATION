@@ -6,10 +6,14 @@ import pytest
 
 from src.config import ProviderConfig
 from src.discovery.providers import (
+    ask_gemini,
     ask_openai,
     ask_perplexity,
     estimate_cost,
+    gemini_citations,
+    gemini_source_url,
     get_ask_fn,
+    parse_gemini,
     parse_openai,
     parse_perplexity,
 )
@@ -123,3 +127,82 @@ def test_ask_openai_with_fake_client() -> None:
 def test_unknown_provider() -> None:
     with pytest.raises(KeyError):
         get_ask_fn("nope")
+
+
+# ---------------------------------------------------------------- Gemini
+
+REDIRECT = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc"
+GEMINI_RAW = {
+    "modelVersion": "gemini-2.5-flash",
+    "candidates": [
+        {
+            "content": {"parts": [{"text": "Nykaa and "}, {"text": "Sephora India."}]},
+            "groundingMetadata": {
+                "groundingChunks": [
+                    {"web": {"uri": REDIRECT, "title": "nykaa.com"}},
+                    {"web": {"uri": REDIRECT, "title": "nykaa.com"}},
+                    {"web": {"uri": "https://sephora.in/p", "title": "sephora.in"}},
+                ]
+            },
+        }
+    ],
+    "usageMetadata": {"promptTokenCount": 8, "candidatesTokenCount": 15},
+}
+
+
+def gemini_cfg() -> ProviderConfig:
+    return ProviderConfig(name="gemini", model="gemini-2.5-flash")
+
+
+def test_parse_gemini_joins_parts_and_dedupes_sources() -> None:
+    answer, sources, tin, tout = parse_gemini(GEMINI_RAW)
+    assert answer == "Nykaa and Sephora India."
+    assert [s["uri"] for s in sources] == [REDIRECT, "https://sephora.in/p"]
+    assert (tin, tout) == (8, 15)
+
+
+def test_parse_gemini_empty_candidates() -> None:
+    assert parse_gemini({}) == ("", [], None, None)
+
+
+def test_ask_gemini_uses_source_domains() -> None:
+    seen: dict = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["key"] = req.headers["x-goog-api-key"]
+        seen["url"] = str(req.url)
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, json=GEMINI_RAW)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    out = ask_gemini(gemini_cfg(), "k", "best serum?", client=client)
+    assert seen["key"] == "k"
+    assert "gemini-2.5-flash:generateContent" in seen["url"]
+    assert seen["body"]["tools"] == [{"google_search": {}}]
+    assert out.citations == ["https://nykaa.com", "https://sephora.in/p"]
+    assert out.answer_text == "Nykaa and Sephora India."
+    assert out.raw == GEMINI_RAW  # raw keeps the original redirects
+    assert out.model == "gemini-2.5-flash"
+
+
+def test_gemini_source_url_rules() -> None:
+    assert (
+        gemini_source_url({"uri": REDIRECT, "title": "Tirabeauty.com"}) == "https://tirabeauty.com"
+    )
+    assert gemini_source_url({"uri": REDIRECT, "title": "Some Blog Post"}) == REDIRECT
+    assert gemini_source_url({"uri": "https://x.com/a", "title": "x.com"}) == "https://x.com/a"
+
+
+def test_gemini_citations_matches_other_parsers_shape() -> None:
+    answer, urls, tin, tout = gemini_citations(GEMINI_RAW)
+    assert urls == ["https://nykaa.com", "https://sephora.in/p"] and (tin, tout) == (8, 15)
+
+
+def test_ask_gemini_raises_on_http_error() -> None:
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(429)))
+    with pytest.raises(httpx.HTTPStatusError):
+        ask_gemini(gemini_cfg(), "k", "q", client=client)
+
+
+def test_gemini_registered() -> None:
+    assert get_ask_fn("gemini") is ask_gemini

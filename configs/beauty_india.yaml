@@ -33,3 +33,17 @@ providers:
     price_input_per_mtok: null
     price_output_per_mtok: null
     price_per_request: null     # web search tool call fee
+  - name: gemini
+    model: gemini-2.5-flash     # verified 2026-11-24 via models.list; uses google_search grounding
+    enabled: true
+    timeout_s: 90
+    price_input_per_mtok: null
+    price_output_per_mtok: null
+    price_per_request: null     # grounded search fee
+
+# LLM used as a *tool* (sentiment / recommendation labelling, later drafting).
+# Uses OPENAI_API_KEY. Not one of the engines being measured.
+analysis:
+  model: gpt-5-mini             # VERIFY current model name
+  timeout_s: 60
+  embedding_model: text-embedding-3-small   # 1536 dims (matches the DB)

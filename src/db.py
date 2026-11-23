@@ -56,7 +56,11 @@ def run_migrations(db_url: str | None = None, directory: Path = MIGRATIONS_DIR) 
             logger.info("Applying migration %s", path.name)
             with conn.transaction():
                 conn.execute(path.read_text(encoding="utf-8"))
-                conn.execute("INSERT INTO schema_migrations (filename) VALUES (%s)", (path.name,))
+                # Files may record themselves (so they can be pasted into the Supabase editor).
+                conn.execute(
+                    "INSERT INTO schema_migrations (filename) VALUES (%s) ON CONFLICT DO NOTHING",
+                    (path.name,),
+                )
             applied_now.append(path.name)
     return applied_now
 

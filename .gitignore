@@ -18,3 +18,9 @@ mlruns/
 
 # Data
 data/raw/
+
+# Local clone of this repo (not part of the project)
+GEO_OPTIMISATION/
+
+# Scratch
+*.log

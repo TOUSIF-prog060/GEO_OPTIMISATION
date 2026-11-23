@@ -30,12 +30,21 @@ class ProviderConfig(BaseModel):
     price_per_request: float | None = None
 
 
+class AnalysisConfig(BaseModel):
+    """LLM used as a tool (labelling, drafting) — not one of the engines being measured."""
+
+    model: str = "gpt-5-mini"
+    timeout_s: float = 60.0
+    embedding_model: str = "text-embedding-3-small"  # 1536 dims, matches vector(1536)
+
+
 class ProjectConfig(BaseModel):
     project: str
     market: str
     language: str
     brands: list[Brand]
     providers: list[ProviderConfig]
+    analysis: AnalysisConfig = AnalysisConfig()
 
     @model_validator(mode="after")
     def _exactly_one_target(self) -> ProjectConfig:
@@ -63,6 +72,7 @@ class Settings(BaseModel):
     supabase_db_url: str | None = None
     perplexity_api_key: str | None = None
     openai_api_key: str | None = None
+    gemini_api_key: str | None = None
     project: ProjectConfig
 
     def require(self, field: str) -> str:
@@ -86,5 +96,6 @@ def get_settings(config_path: str = str(DEFAULT_CONFIG_PATH)) -> Settings:
         supabase_db_url=os.getenv("SUPABASE_DB_URL") or None,
         perplexity_api_key=os.getenv("PERPLEXITY_API_KEY") or None,
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
+        gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
         project=load_project_config(config_path),
     )

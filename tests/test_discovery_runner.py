@@ -37,6 +37,7 @@ def settings(with_keys: bool = True) -> Settings:
         project=load_project_config(),
         perplexity_api_key="pk" if with_keys else None,
         openai_api_key="ok" if with_keys else None,
+        gemini_api_key="gk" if with_keys else None,
     )
 
 
@@ -66,13 +67,13 @@ def test_run_refuses_without_keys() -> None:
 
 def test_run_stores_every_answer_with_lineage() -> None:
     repo = FakeRepo()
-    fns = {"perplexity": fake_answer, "openai": fake_answer}
+    fns = {"perplexity": fake_answer, "openai": fake_answer, "gemini": fake_answer}
     out = run_discovery(
         DiscoveryInput(panel_version="v0", limit=3, repeats=2), settings(), repo, ask_fns=fns
     )
 
-    assert len(out.runs) == 2
-    assert len(repo.responses) == 3 * 2 * 2
+    assert len(out.runs) == 3
+    assert len(repo.responses) == 3 * 2 * 3
     for r in out.runs:
         assert r.status == "completed" and r.n_ok == 6 and r.n_failed == 0
         assert r.cost_usd == pytest.approx(0.06)
@@ -128,4 +129,4 @@ def test_no_retry_on_client_error() -> None:
 
 def test_unknown_provider_rejected() -> None:
     with pytest.raises(ValueError, match="not enabled"):
-        plan_discovery(DiscoveryInput(panel_version="v0", providers=["gemini"]), settings())
+        plan_discovery(DiscoveryInput(panel_version="v0", providers=["unknown"]), settings())

@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS domains (
 CREATE TABLE IF NOT EXISTS bronze_runs (
     run_id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     panel_version   text NOT NULL,
-    provider        text NOT NULL,                -- perplexity | openai
+    provider        text NOT NULL,                -- perplexity | openai | gemini
     model           text NOT NULL,
     config_snapshot jsonb NOT NULL DEFAULT '{}',  -- yaml config at run time
     run_type        text NOT NULL DEFAULT 'baseline' CHECK (run_type IN ('baseline','retest','adhoc')),

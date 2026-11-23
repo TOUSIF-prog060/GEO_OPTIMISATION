@@ -132,11 +132,93 @@ def ask_openai(
     )
 
 
+# ---------------------------------------------------------------- Gemini (google_search grounding)
+
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_REDIRECT_HOST = "vertexaisearch.cloud.google.com"
+
+
+def build_gemini_request(cfg: ProviderConfig, question: str) -> dict[str, Any]:
+    return {"contents": [{"parts": [{"text": question}]}], "tools": [{"google_search": {}}]}
+
+
+def parse_gemini(raw: dict[str, Any]) -> tuple[str, list[dict[str, str]], int | None, int | None]:
+    """Return (answer_text, sources, input_tokens, output_tokens) from a generateContent payload.
+
+    `sources` are the grounding chunks as given: [{"uri": redirect_url, "title": domain}].
+    Gemini returns Google redirect URLs, so callers resolve them before storing citations.
+    """
+    cand = (raw.get("candidates") or [{}])[0]
+    parts = (cand.get("content") or {}).get("parts") or []
+    answer = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+    sources: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for ch in (cand.get("groundingMetadata") or {}).get("groundingChunks") or []:
+        web = ch.get("web") or {}
+        uri = web.get("uri")
+        if uri and uri not in seen:
+            seen.add(uri)
+            sources.append({"uri": uri, "title": web.get("title") or ""})
+    usage = raw.get("usageMetadata") or {}
+    return answer, sources, usage.get("promptTokenCount"), usage.get("candidatesTokenCount")
+
+
+def gemini_source_url(source: dict[str, str]) -> str:
+    """Citation URL for one grounding source, derived from the stored payload only.
+
+    Gemini gives each source as a short-lived Google redirect plus the source's domain as the
+    title. The redirect hides the site, so use https://<title> when the title is a bare domain;
+    otherwise keep the URI. Deterministic, so diagnostics can re-derive it from raw at any time.
+    """
+    uri, title = source["uri"], (source.get("title") or "").strip()
+    if GEMINI_REDIRECT_HOST in uri and title and "." in title and " " not in title:
+        return f"https://{title.lower()}"
+    return uri
+
+
+def gemini_citations(raw: dict[str, Any]) -> tuple[str, list[str], int | None, int | None]:
+    """Same shape as parse_perplexity / parse_openai: (answer, citation_urls, tin, tout)."""
+    answer, sources, tin, tout = parse_gemini(raw)
+    return answer, _dedupe([gemini_source_url(s) for s in sources]), tin, tout
+
+
+def ask_gemini(
+    cfg: ProviderConfig, api_key: str, question: str, client: httpx.Client | None = None
+) -> ProviderAnswer:
+    payload = build_gemini_request(cfg, question)
+    http = client or httpx.Client(timeout=cfg.timeout_s)
+    try:
+        start = time.perf_counter()
+        resp = http.post(
+            GEMINI_URL.format(model=cfg.model), headers={"x-goog-api-key": api_key}, json=payload
+        )
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        resp.raise_for_status()
+        raw = resp.json()
+    finally:
+        if client is None:
+            http.close()
+    answer, citations, tin, tout = gemini_citations(raw)
+    return ProviderAnswer(
+        answer_text=answer,
+        citations=citations,
+        model=raw.get("modelVersion", cfg.model),
+        request=payload,
+        raw=raw,
+        latency_ms=latency_ms,
+        input_tokens=tin,
+        output_tokens=tout,
+        cost_usd=estimate_cost(cfg, tin, tout),
+        http_status=resp.status_code,
+    )
+
+
 # ---------------------------------------------------------------- registry
 
 PROVIDERS: dict[str, AskFn] = {
     "perplexity": ask_perplexity,
     "openai": ask_openai,
+    "gemini": ask_gemini,
 }
 
 

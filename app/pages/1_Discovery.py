@@ -46,7 +46,7 @@ c1.metric("Prompts", len(df))
 c2.metric("Categories", df["category"].nunique())
 c3.metric("Intents", df["intent"].nunique())
 with st.expander("Preview panel"):
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
 
 # ---------------------------------------------------------------- run settings
 st.subheader("Run")
@@ -109,7 +109,7 @@ else:
         with get_conn() as conn:
             runs = list_recent_runs(conn)
         if runs:
-            st.dataframe(pd.DataFrame(runs), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(runs), width="stretch", hide_index=True)
         else:
             st.caption("No runs yet.")
     except Exception as exc:
