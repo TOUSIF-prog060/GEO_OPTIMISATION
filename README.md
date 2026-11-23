@@ -137,6 +137,8 @@ powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 | Agent: full loop (pauses for review) | `python scripts/run_agent.py start --panel v0 --limit 5` |
 | Agent: approve and resume | `python scripts/run_agent.py resume --thread <id> --approve <variant_id> --reviewer TS` |
 | Experiments | `python scripts/run_experiment.py plan ...` · `retest --experiment <id>` · `list` |
+| Sandbox evaluation (free) | `python -m evals.run` · add `--live` for a real model stability test · results in [`docs/EVALUATION.md`](docs/EVALUATION.md) |
+| Evaluation PDF for manual review | `python -m evals.report_pdf` → `reports/evals/evaluation_report_<time>.pdf` |
 
 ## 🔎 Discovery engine (Phase 1)
 
@@ -192,13 +194,13 @@ A Next.js dashboard (`web/`) talks to a small FastAPI backend (`src/api/`) that 
 | Page | What you see and do |
 |---|---|
 | Overview | A sentence written from your latest data, share of voice per engine as brand swatches, trend, by-engine bars, category heatmap, biggest gaps, pipeline, run costs |
-| 1 Ask the engines | **Ask your own question** and compare the engines' answers side by side (brands highlighted, sources listed, measured automatically), re-ask earlier questions; or run the fixed prompt panel |
-| 2 Measure visibility | Mention rate, share of voice, list position, by category; most-cited sites and source types; every answer with brands highlighted and its sources; stability and fact accuracy |
+| 1 Ask the engines | **Ask your own question** and compare the engines' answers side by side (brands highlighted, sources listed, measured automatically), re-ask earlier questions; or tick questions from the fixed panel one by one or a whole category at a time |
+| 2 Measure visibility | Mention rate, share of voice, list position, by category; most-cited sites and source types; every answer with brands highlighted and its sources; stability and fact accuracy; **Download PDF report** for the selected run (brand comparison with 95% intervals, gaps found, every answer) |
 | 3 Find gaps | Ranked gaps with confidence, effort, Sephora vs benchmark, the evidence answers, approve/reject the action |
 | 4 Draft content | Approved knowledge base, write a grounded draft for a gap, grounding check, sources, approve/reject |
 | 5 Run the agent | Start the full loop on existing runs or new ones, step timeline, review drafts when it pauses, report |
 | 6 Re-test | Plan a noise check or a change test, run it, baseline vs re-test with 95% CI and p-value |
-| Check accuracy | Human labels vs the system: precision, recall, F1, labeller agreement, disagreements |
+| Check accuracy | **Download evaluation PDF** (every sandbox test with charts, expected-vs-actual tables, sign-off boxes); human labels vs the system: precision, recall, F1, labeller agreement |
 
 The old Streamlit pages in `app/` still work as a fallback.
 

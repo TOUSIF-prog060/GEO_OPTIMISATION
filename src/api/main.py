@@ -8,19 +8,21 @@ Reads call the existing query helpers; slow or billed work runs as a background 
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterator
 from typing import Any, Literal
 
 import psycopg
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from psycopg.types.numeric import FloatLoader
 from pydantic import BaseModel, Field
 
 from src import reporting, services
 from src.api import queries
 from src.api.jobs import Job, JobManager, ProgressFn
-from src.config import Settings, get_settings
+from src.config import ROOT_DIR, Settings, get_settings
 from src.copilot import ingest_knowledge
 from src.copilot.knowledge import load_docs
 from src.copilot.repository import (
@@ -564,6 +566,61 @@ def validation_report(sample_version: str, conn: psycopg.Connection = Conn) -> d
     system = load_system_mentions(conn, sample_version)
     brand_ids = {b.name: b.brand_id for b in PostgresDiagnosticsRepository(conn).load_brands()}
     return evaluate(sample_version, labels, system, brand_ids).model_dump()
+
+
+# ---------------------------------------------------------------- PDF reports
+
+REPORT_DIRS = {"run_report": ROOT_DIR / "reports" / "runs",
+               "evaluation_report": ROOT_DIR / "reports" / "evals"}  # fmt: skip
+_REPORT_NAME = re.compile(r"^(run_report|evaluation_report)_[A-Za-z0-9_-]+\.(pdf|html)$")
+
+
+class ReportBody(BaseModel):
+    kind: Literal["run", "evaluation"]
+    run_id: str | None = None
+
+
+@app.post("/api/jobs/report")
+def start_report(body: ReportBody) -> Job:
+    """Build a PDF report in the background; download it from /api/reports/{file}."""
+    if body.kind == "run" and not body.run_id:
+        raise HTTPException(400, "run_id is required for a run report")
+
+    def run(progress: ProgressFn) -> dict[str, Any]:
+        if body.kind == "run":
+            from src.run_report import build_run_report
+
+            path = build_run_report(body.run_id)
+        else:
+            from evals.report_pdf import build_report
+
+            path = build_report()
+        return {"file": path.name, "format": path.suffix.lstrip(".")}
+
+    return jobs.submit("report", body.model_dump(), run)
+
+
+@app.get("/api/reports")
+def list_reports() -> list[dict[str, Any]]:
+    out = []
+    for prefix, folder in REPORT_DIRS.items():
+        for f in folder.glob(f"{prefix}_*.pdf"):
+            st = f.stat()
+            out.append({"file": f.name, "kind": prefix.removesuffix("_report"),
+                        "size_kb": round(st.st_size / 1024), "created": st.st_mtime})  # fmt: skip
+    return sorted(out, key=lambda r: r["created"], reverse=True)[:30]
+
+
+@app.get("/api/reports/{name}")
+def download_report(name: str) -> FileResponse:
+    m = _REPORT_NAME.match(name)
+    if not m:
+        raise HTTPException(400, "Not a report file name")
+    path = (REPORT_DIRS[m.group(1)] / name).resolve()
+    if path.parent != REPORT_DIRS[m.group(1)].resolve() or not path.is_file():
+        raise HTTPException(404, "Report not found")
+    media = "application/pdf" if name.endswith(".pdf") else "text/html"
+    return FileResponse(path, media_type=media, filename=name)
 
 
 # ---------------------------------------------------------------- jobs

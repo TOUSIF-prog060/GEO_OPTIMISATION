@@ -96,3 +96,8 @@ One entry per decision: date, decision, alternatives considered, reason, owner.
 - **Decision:** the dashboard lets a user type up to 10 questions and pick engines. They go through the normal discovery engine (raw answers stored, retries, lineage) as an `adhoc` run on the `custom` prompt set, then are measured automatically (rules only, free).
 - **Why not a plain chat box:** every answer must be stored and traceable; the stable hash id lets a repeated question be compared over time; `adhoc` keeps one-off questions out of the panel-based headline metrics, which need a fixed question set to be comparable.
 - **Database connection:** switched `SUPABASE_DB_URL` to the Supabase session pooler (IPv4). The direct host is IPv6-only and failed when the local network lost IPv6; hosting platforms also need the pooler.
+
+## 2026-11-24 — PDF reports from the dashboard
+- **Decision:** reports are HTML with inline SVG charts, printed to PDF by the installed Chrome or Edge (`src/report_pdf.py`), so no PDF library is added. Two reports: a run report (`src/run_report.py`, Measure visibility and Overview) and the evaluation report (`evals/report_pdf.py`, Check accuracy). Built as background jobs; downloaded from `/api/reports/{file}`, which only serves `run_report_*` / `evaluation_report_*` files from `reports/runs` and `reports/evals`.
+- **Deployment note:** a host without Chrome/Edge falls back to the HTML report (the user is told). On Render or similar, install Chromium in the image to get PDFs.
+- **Print colours:** brand hues re-stepped to pass colour-blind and contrast checks (Sephora #9b3f86, Nykaa #e2607f, Tira #1f7fc0); every chart is also directly labelled.

@@ -1,18 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { AskOwnQuestion } from "@/components/ask";
+import { PanelPicker } from "@/components/panel-picker";
 import { Empty, ErrorNote, JobBar, Loading, PageHeader, Panel, StatusPill } from "@/components/bits";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApi, useJob } from "@/hooks/use-api";
-import { api, type DiscoveryPlan, type Panel as PanelT, type Run, type Status } from "@/lib/api";
-import { humanise, providerLabel, usd, when } from "@/lib/format";
+import type { Panel as PanelT, Run, Status } from "@/lib/api";
+import { providerLabel, usd, when } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export default function DiscoveryPage() {
@@ -20,48 +18,25 @@ export default function DiscoveryPage() {
   const { data: status } = useApi<Status>("/status");
   const runs = useApi<Run[]>("/runs");
 
-  const [version, setVersion] = useState("v0");
-  const [chosenPick, setChosen] = useState<string[] | null>(null);
-  const [limit, setLimit] = useState(5);
-  const [repeats, setRepeats] = useState(1);
-  const [category, setCategory] = useState<string | null>(null);
-  const [plan, setPlan] = useState<DiscoveryPlan | null>(null);
-  const [planError, setPlanError] = useState<string | null>(null);
-
-  const discovery = useJob(() => runs.reload());
   const diagnose = useJob(() => runs.reload());
-
-  // Default: every engine that has a key.
-  const chosen = useMemo(
-    () => chosenPick ?? status?.providers.filter((p) => p.has_key).map((p) => p.name) ?? [],
-    [chosenPick, status],
+  const categories = useMemo(
+    () => [...new Set(panels?.flatMap((p) => p.prompts.map((q) => q.category)))].sort(),
+    [panels],
   );
-
-  const panel = panels?.find((p) => p.version === version);
-  const categories = useMemo(() => [...new Set(panel?.prompts.map((p) => p.category))].sort(), [panel]);
-  const shown = panel?.prompts.filter((p) => !category || p.category === category) ?? [];
-
-  const body = useMemo(
-    () => ({ panel_version: version, providers: chosen, limit: limit || null, repeats }),
-    [version, chosen, limit, repeats],
+  const nPanel = panels?.[0]?.prompts.length ?? 0;
+  // Tabs render only after data loads in the browser, so reading the URL here is safe.
+  const [tab, setTab] = useState(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "panel"
+      ? "panel"
+      : "own",
   );
-
-  useEffect(() => {
-    if (!chosen.length) return;
-    api
-      .post<DiscoveryPlan>("/discovery/plan", body)
-      .then((p) => {
-        setPlan(p);
-        setPlanError(null);
-      })
-      .catch((e: Error) => setPlanError(e.message));
-  }, [body, chosen.length]);
+  const changeTab = (t: string) => {
+    setTab(t);
+    window.history.replaceState(null, "", t === "panel" ? "?tab=panel" : window.location.pathname);
+  };
 
   if (error) return <ErrorNote message={error} />;
   if (!panels || !status) return <Loading />;
-
-  const shownPlan = chosen.length ? plan : null;
-  const blocked = !chosen.length || !shownPlan || shownPlan.missing_keys.length > 0 || discovery.busy;
 
   return (
     <div className="space-y-8">
@@ -70,10 +45,10 @@ export default function DiscoveryPage() {
         lede="Ask your own question and compare the engines' answers side by side, or run the fixed question panel that the headline numbers are built on. Every answer is stored exactly as it came back."
       />
 
-      <Tabs defaultValue="own" className="gap-6">
+      <Tabs value={tab} onValueChange={changeTab} className="gap-6">
         <TabsList>
           <TabsTrigger value="own">Your own question</TabsTrigger>
-          <TabsTrigger value="panel">Question panel ({panel?.prompts.length ?? 0})</TabsTrigger>
+          <TabsTrigger value="panel">Question panel ({nPanel})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="own">
@@ -81,139 +56,11 @@ export default function DiscoveryPage() {
         </TabsContent>
 
         <TabsContent value="panel">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-            <Panel
-              title={`Prompt panel ${version}`}
-              note={`${panel?.prompts.length ?? 0} questions across ${categories.length} categories. Edit data/reference/prompt_panel_${version}.csv to change them.`}
-              action={
-                panels.length > 1 && (
-                  <select
-                    className="rounded-md border bg-background px-2 py-1 text-sm"
-                    value={version}
-                    onChange={(e) => setVersion(e.target.value)}
-                    aria-label="Panel version"
-                  >
-                    {panels.map((p) => (
-                      <option key={p.version}>{p.version}</option>
-                    ))}
-                  </select>
-                )
-              }
-            >
-              <div className="mb-4 flex flex-wrap gap-1.5">
-                {[null, ...categories].map((c) => (
-                  <button
-                    key={c ?? "all"}
-                    onClick={() => setCategory(c)}
-                    className={cn(
-                      "rounded-full border px-3 py-1 text-xs capitalize transition-colors",
-                      category === c ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted",
-                    )}
-                  >
-                    {c ? c.replaceAll("_", " ") : "All"}
-                  </button>
-                ))}
-              </div>
-              <ol className="max-h-[440px] divide-y overflow-y-auto pr-1">
-                {shown.map((p) => (
-                  <li key={p.prompt_id} className="flex gap-3 py-2.5 text-sm">
-                    <span className="num w-6 shrink-0 text-right text-xs text-muted-foreground">
-                      {panel!.prompts.indexOf(p) + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <p
-                        className={cn(limit && panel!.prompts.indexOf(p) >= limit && "text-muted-foreground")}
-                      >
-                        {p.text}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {humanise(p.category)} · {humanise(p.intent)}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </Panel>
-
-            <Panel title="New run" className="h-fit lg:sticky lg:top-6">
-              <fieldset className="space-y-2.5">
-                <legend className="mb-2 text-sm font-medium">Engines</legend>
-                {status.providers.map((p) => (
-                  <label
-                    key={p.name}
-                    className={cn("flex items-center gap-3 text-sm", !p.has_key && "text-muted-foreground")}
-                  >
-                    <Checkbox
-                      checked={chosen.includes(p.name)}
-                      disabled={!p.has_key}
-                      onCheckedChange={(v) =>
-                        setChosen(v ? [...chosen, p.name] : chosen.filter((x) => x !== p.name))
-                      }
-                    />
-                    <span className="flex-1">{providerLabel(p.name)}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {p.has_key ? p.model : "add key in .env"}
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="limit">Questions</Label>
-                  <Input
-                    id="limit"
-                    type="number"
-                    min={1}
-                    max={panel?.prompts.length}
-                    value={limit}
-                    onChange={(e) => setLimit(Number(e.target.value))}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="repeats">Repeats</Label>
-                  <Input
-                    id="repeats"
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={repeats}
-                    onChange={(e) => setRepeats(Math.max(1, Math.min(5, Number(e.target.value))))}
-                  />
-                </div>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Repeats ask each question more than once to measure how stable answers are.
-              </p>
-
-              <div className="mt-5 rounded-md bg-muted px-3 py-2.5 text-sm">
-                {planError ? (
-                  <span className="text-loss">{planError}</span>
-                ) : shownPlan ? (
-                  <>
-                    <span className="num font-semibold">{shownPlan.n_calls}</span> billed calls:{" "}
-                    {shownPlan.n_prompts} questions × {shownPlan.providers.length} engine
-                    {shownPlan.providers.length === 1 ? "" : "s"} × {shownPlan.repeats} repeat
-                    {shownPlan.repeats === 1 ? "" : "s"}
-                  </>
-                ) : (
-                  "Choose at least one engine."
-                )}
-              </div>
-
-              <Button
-                className="mt-4 w-full"
-                size="lg"
-                disabled={blocked}
-                onClick={() => discovery.start("/jobs/discovery", body, "Discovery")}
-              >
-                {discovery.busy ? "Asking…" : "Start run"}
-              </Button>
-              <div className="mt-3">
-                <JobBar job={discovery.job} />
-              </div>
-            </Panel>
-          </div>
+          <p className="mb-5 max-w-3xl text-sm text-muted-foreground">
+            The fixed questions behind the headline numbers. Tick the ones to ask, by question or by whole
+            category. Edit data/reference/prompt_panel_v0.csv to change the list.
+          </p>
+          <PanelPicker panels={panels} status={status} onFinished={runs.reload} />
         </TabsContent>
       </Tabs>
 

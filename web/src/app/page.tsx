@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { Delta, Empty, ErrorNote, Loading, Panel, StatusPill } from "@/components/bits";
 import { BrandBars, TrendLines } from "@/components/charts";
+import { ReportButton } from "@/components/report-button";
 import { Heatmap, SwatchStrip } from "@/components/swatch";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,7 +19,10 @@ function latestByProvider(history: HistoryRow[]) {
   for (const p of new Set(history.map((h) => h.provider))) {
     const rows = history.filter((h) => h.provider === p);
     const last = rows.reduce((m, h) => (h.started_at > m ? h.started_at : m), "");
-    out.set(p, rows.filter((h) => h.started_at === last));
+    out.set(
+      p,
+      rows.filter((h) => h.started_at === last),
+    );
   }
   return out;
 }
@@ -72,6 +76,10 @@ export default function OverviewPage() {
   if (loading || !data) return <Loading rows={4} />;
 
   const tp = trendProvider ?? providers[0];
+  // Same run the headline sentence is about: the engine with the most answers.
+  const headlineRun = [...latest.values()].sort(
+    (a, b) => (b[0]?.n_responses ?? 0) - (a[0]?.n_responses ?? 0),
+  )[0]?.[0]?.run_id;
   const hp = heatProvider ?? providers[0];
   const trend = (() => {
     const rows = data.history.filter((h) => h.provider === tp);
@@ -108,12 +116,13 @@ export default function OverviewPage() {
   return (
     <div className="space-y-12">
       <section className="space-y-8">
-        <Headline latest={latest} target={target} />
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <Headline latest={latest} target={target} />
+          <ReportButton kind="run" runId={headlineRun} label="Download this run as PDF" />
+        </div>
         <div
           className={
-            providers.length === 1
-              ? "max-w-3xl"
-              : "grid gap-x-10 gap-y-8 md:grid-cols-2 xl:grid-cols-3"
+            providers.length === 1 ? "max-w-3xl" : "grid gap-x-10 gap-y-8 md:grid-cols-2 xl:grid-cols-3"
           }
         >
           {providers.map((p) => {
@@ -127,7 +136,8 @@ export default function OverviewPage() {
                   rows={rows.map((r) => ({ brand: r.brand, value: r.share_of_voice }))}
                 />
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {target} mention rate <span className="num font-medium text-foreground">{pct(k?.value)}</span>
+                  {target} mention rate{" "}
+                  <span className="num font-medium text-foreground">{pct(k?.value)}</span>
                   <Delta value={k?.delta} />
                 </p>
               </div>
@@ -235,7 +245,9 @@ export default function OverviewPage() {
             ].map(([k, v]) => (
               <div key={k as string}>
                 <dt className="text-xs text-muted-foreground">{k}</dt>
-                <dd className="num mt-1 font-[family-name:var(--font-bricolage)] text-2xl font-semibold">{v}</dd>
+                <dd className="num mt-1 font-[family-name:var(--font-bricolage)] text-2xl font-semibold">
+                  {v}
+                </dd>
               </div>
             ))}
           </dl>
@@ -278,8 +290,8 @@ export default function OverviewPage() {
       </Panel>
 
       <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground">
-        These figures describe the prompt panel, engines, market and dates measured, nothing wider.
-        AI answers vary between runs; use repeated runs and the re-test page before drawing conclusions.
+        These figures describe the prompt panel, engines, market and dates measured, nothing wider. AI answers
+        vary between runs; use repeated runs and the re-test page before drawing conclusions.
       </p>
     </div>
   );

@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Empty, ErrorNote, Loading, PageHeader, Panel } from "@/components/bits";
+import { ReportButton, ReportList } from "@/components/report-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApi } from "@/hooks/use-api";
 import type { PRF, ValidationReport, ValidationSample } from "@/lib/api";
@@ -40,9 +41,18 @@ export default function ValidationPage() {
     <div className="space-y-8">
       <PageHeader
         title="Check accuracy"
-        lede="Two people label a sample of answers by hand. Comparing their labels with the system's shows how far the measurements can be trusted."
+        lede="How far the measurements can be trusted: an automatic evaluation against test answers with known results, and two people labelling real answers by hand."
+        actions={<ReportButton kind="evaluation" variant="default" />}
       />
 
+      <Panel
+        title="Evaluation report"
+        note="Runs every sandbox test (mention detection, list positions, citations, metric formulas, gap rules, the agent) and compares the latest panel run across brands. Charts, expected-vs-actual tables, every test case and sign-off boxes, ready to print and review."
+      >
+        <ReportList />
+      </Panel>
+
+      <h2 className="pt-2 text-xl font-semibold">Human labels</h2>
       {samples.error && <ErrorNote message={samples.error} />}
       {samples.loading && <Loading />}
 
@@ -55,7 +65,10 @@ export default function ValidationPage() {
                 python scripts/validation.py sample --latest --n 100 --version s1 --labellers TS AB
               </code>
             </li>
-            <li>Each person fills in their own sheet in data/processed/validation/, without seeing the other&apos;s.</li>
+            <li>
+              Each person fills in their own sheet in data/processed/validation/, without seeing the
+              other&apos;s.
+            </li>
             <li>
               Import both sheets:{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
@@ -81,15 +94,29 @@ export default function ValidationPage() {
 
       {report.loading && version && <Loading />}
       {version && report.data === null && (
-        <Empty title={`No labels imported for sample ${version}`}>Import the labelled sheets to see the scores.</Empty>
+        <Empty title={`No labels imported for sample ${version}`}>
+          Import the labelled sheets to see the scores.
+        </Empty>
       )}
 
       {report.data && (
         <>
           <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
-            <Score label="Mention precision" value={pct(report.data.mentioned.precision, 1)} hint="Named by the system and truly there" />
-            <Score label="Mention recall" value={pct(report.data.mentioned.recall, 1)} hint="Truly there and found by the system" />
-            <Score label="Mention F1" value={pct(report.data.mentioned.f1, 1)} hint={`${report.data.mentioned.n} labelled items`} />
+            <Score
+              label="Mention precision"
+              value={pct(report.data.mentioned.precision, 1)}
+              hint="Named by the system and truly there"
+            />
+            <Score
+              label="Mention recall"
+              value={pct(report.data.mentioned.recall, 1)}
+              hint="Truly there and found by the system"
+            />
+            <Score
+              label="Mention F1"
+              value={pct(report.data.mentioned.f1, 1)}
+              hint={`${report.data.mentioned.n} labelled items`}
+            />
             <Score
               label="Labeller agreement"
               value={num(report.data.kappa_mentioned, 2)}
@@ -118,7 +145,8 @@ export default function ValidationPage() {
                 <div>
                   <dt className="text-xs text-muted-foreground">List rank exact</dt>
                   <dd>
-                    {pct(report.data.rank_accuracy, 1)} <span className="text-muted-foreground">of {report.data.rank_n}</span>
+                    {pct(report.data.rank_accuracy, 1)}{" "}
+                    <span className="text-muted-foreground">of {report.data.rank_n}</span>
                   </dd>
                 </div>
                 <div>
@@ -130,14 +158,17 @@ export default function ValidationPage() {
                 </div>
               </dl>
             </Panel>
-            <Panel title="Where the system disagreed" note="First mismatches with the human consensus, for error analysis.">
+            <Panel
+              title="Where the system disagreed"
+              note="First mismatches with the human consensus, for error analysis."
+            >
               {report.data.errors.length ? (
                 <ul className="divide-y text-sm">
                   {report.data.errors.map((e, i) => (
                     <li key={i} className="py-2">
                       <p>
-                        {e.brand}: people said <b>{e.human === "True" ? "mentioned" : "not mentioned"}</b>, system said{" "}
-                        <b>{e.system === "True" ? "mentioned" : "not mentioned"}</b>
+                        {e.brand}: people said <b>{e.human === "True" ? "mentioned" : "not mentioned"}</b>,
+                        system said <b>{e.system === "True" ? "mentioned" : "not mentioned"}</b>
                       </p>
                       {e.notes && <p className="text-xs text-muted-foreground">{e.notes}</p>}
                     </li>

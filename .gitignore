@@ -24,3 +24,7 @@ GEO_OPTIMISATION/
 
 # Scratch
 *.log
+
+# Generated reports (download from the dashboard; regenerate any time)
+reports/runs/
+reports/evals/

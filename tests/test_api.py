@@ -185,3 +185,51 @@ def test_ask_needs_key(client: TestClient) -> None:
         "/api/jobs/ask", json={"questions": ["Best lipstick?"], "providers": ["openai"]}
     )
     assert r.status_code == 400 and "openai" in r.json()["detail"]
+
+
+def test_plan_with_hand_picked_questions(client: TestClient) -> None:
+    body = {"providers": ["gemini"], "prompt_ids": ["RET-002", "SER-001"], "repeats": 3}
+    plan = client.post("/api/discovery/plan", json=body).json()
+    assert plan["n_prompts"] == 2 and plan["n_calls"] == 6
+    bad = client.post("/api/discovery/plan", json={"providers": ["gemini"], "prompt_ids": ["X"]})
+    assert bad.status_code == 400
+
+
+# ---------------------------------------------------------------- PDF reports
+
+
+def test_report_job_and_download(client: TestClient, monkeypatch, tmp_path) -> None:
+    runs_dir, eval_dir = tmp_path / "runs", tmp_path / "evals"
+    runs_dir.mkdir()
+    eval_dir.mkdir()
+    monkeypatch.setattr(main, "REPORT_DIRS", {"run_report": runs_dir,
+                                              "evaluation_report": eval_dir})  # fmt: skip
+
+    def fake_build(run_id):
+        p = runs_dir / f"run_report_{run_id[:8]}_20260101-000000.pdf"
+        p.write_bytes(b"%PDF-1.4 test")
+        return p
+
+    import src.run_report
+
+    monkeypatch.setattr(src.run_report, "build_run_report", fake_build)
+    job = client.post("/api/jobs/report", json={"kind": "run", "run_id": "abcdef1234"}).json()
+    done = wait(main.jobs, job["job_id"])
+    assert done.result == {"file": "run_report_abcdef12_20260101-000000.pdf", "format": "pdf"}
+
+    r = client.get(f"/api/reports/{done.result['file']}")
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+    assert r.headers["content-type"] == "application/pdf"
+    assert "attachment" in r.headers["content-disposition"]
+    assert client.get("/api/reports").json()[0]["kind"] == "run"
+
+
+def test_report_download_rejects_other_files(client: TestClient) -> None:
+    for name in ["..%2F.env", ".env", "run_report_x.exe", "run_report_../../secret.pdf",
+                 "other_report_1.pdf"]:  # fmt: skip
+        assert client.get(f"/api/reports/{name}").status_code in {400, 404}
+    assert client.get("/api/reports/run_report_missing_1.pdf").status_code == 404
+
+
+def test_run_report_needs_run_id(client: TestClient) -> None:
+    assert client.post("/api/jobs/report", json={"kind": "run"}).status_code == 400

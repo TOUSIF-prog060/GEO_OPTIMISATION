@@ -15,6 +15,7 @@ import {
 } from "@/components/bits";
 import { BrandBars, RankBars } from "@/components/charts";
 import { Highlighted } from "@/components/highlight";
+import { ReportButton } from "@/components/report-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -221,7 +222,10 @@ export default function VisibilityPage() {
   const run = runs.data?.find((r) => r.run_id === runId);
   const target = status?.project.target ?? "Sephora India";
 
-  const all = useMemo(() => sortBrands(vis.data?.visibility.filter((v) => v.category === "ALL") ?? []), [vis.data]);
+  const all = useMemo(
+    () => sortBrands(vis.data?.visibility.filter((v) => v.category === "ALL") ?? []),
+    [vis.data],
+  );
   const brands = all.map((r) => r.brand);
   const byCat = useMemo(() => {
     const rows = vis.data?.visibility.filter((v) => v.category !== "ALL") ?? [];
@@ -249,7 +253,8 @@ export default function VisibilityPage() {
     const rows = (vis.data?.sources ?? []).filter((s) => s.category === "ALL");
     const total = rows.reduce((s, r) => s + r.n_citations, 0) || 1;
     const m = new Map<string, number>();
-    for (const r of rows) m.set(r.domain_type ?? "unclassified", (m.get(r.domain_type ?? "unclassified") ?? 0) + r.n_citations);
+    for (const r of rows)
+      m.set(r.domain_type ?? "unclassified", (m.get(r.domain_type ?? "unclassified") ?? 0) + r.n_citations);
     return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ type: t, n, share: n / total }));
   }, [vis.data]);
 
@@ -268,14 +273,24 @@ export default function VisibilityPage() {
       <PageHeader
         title="Measure visibility"
         lede="How often each brand is named, where it ranks in lists, which sites the engines cite, and how stable the answers are."
-        actions={<RunSelect runs={runs.data} value={runId} onChange={setRunId} />}
+        actions={
+          <>
+            <RunSelect runs={runs.data} value={runId} onChange={setRunId} />
+            <ReportButton
+              kind="run"
+              runId={runId}
+              disabled={!run?.diagnosed}
+              disabledReason="Measure this run first"
+            />
+          </>
+        }
       />
 
       {run && !run.diagnosed && (
         <Panel title="This run hasn't been measured yet">
           <p className="text-sm text-muted-foreground">
-            Measuring reads the stored answers: it finds brand mentions and list ranks with rules, and cited sources. It
-            makes no AI calls unless you add sentiment labels.
+            Measuring reads the stored answers: it finds brand mentions and list ranks with rules, and cited
+            sources. It makes no AI calls unless you add sentiment labels.
           </p>
         </Panel>
       )}
@@ -291,7 +306,10 @@ export default function VisibilityPage() {
           {run?.diagnosed ? "Measure again" : "Measure this run"}
         </Button>
         <label
-          className={cn("flex items-center gap-2 text-sm", !status?.analysis.has_key && "text-muted-foreground")}
+          className={cn(
+            "flex items-center gap-2 text-sm",
+            !status?.analysis.has_key && "text-muted-foreground",
+          )}
         >
           <Checkbox
             checked={sentiment}
@@ -319,8 +337,20 @@ export default function VisibilityPage() {
 
           <TabsContent value="visibility" className="space-y-8">
             <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
-              <Metric label="Mention rate" rows={all} pick={(r) => r.mention_rate} format={(v) => pct(v)} hint="" />
-              <Metric label="Share of voice" rows={all} pick={(r) => r.share_of_voice} format={(v) => pct(v)} hint="" />
+              <Metric
+                label="Mention rate"
+                rows={all}
+                pick={(r) => r.mention_rate}
+                format={(v) => pct(v)}
+                hint=""
+              />
+              <Metric
+                label="Share of voice"
+                rows={all}
+                pick={(r) => r.share_of_voice}
+                format={(v) => pct(v)}
+                hint=""
+              />
               <Metric
                 label="Average list position"
                 rows={all}
@@ -341,15 +371,22 @@ export default function VisibilityPage() {
             <div className="grid gap-6 lg:grid-cols-2">
               <Panel title="Mention rate by brand" note={`${all[0]?.n_responses ?? 0} answers in this run.`}>
                 <BrandBars
-                  data={[Object.fromEntries([["x", "All answers"], ...all.map((r) => [r.brand, r.mention_rate])])]}
+                  data={[
+                    Object.fromEntries([["x", "All answers"], ...all.map((r) => [r.brand, r.mention_rate])]),
+                  ]}
                   x="x"
                   series={brands}
                   height={240}
                 />
               </Panel>
-              <Panel title="Average position when listed" note="Lower is better: #1 is the first item in a list.">
+              <Panel
+                title="Average position when listed"
+                note="Lower is better: #1 is the first item in a list."
+              >
                 <BrandBars
-                  data={[Object.fromEntries([["x", "Average rank"], ...all.map((r) => [r.brand, r.avg_rank])])]}
+                  data={[
+                    Object.fromEntries([["x", "Average rank"], ...all.map((r) => [r.brand, r.avg_rank])]),
+                  ]}
                   x="x"
                   series={brands}
                   percent={false}
@@ -358,8 +395,16 @@ export default function VisibilityPage() {
               </Panel>
             </div>
 
-            <Panel title="By category" note="Each category has only a few questions, so read single values with care.">
-              <BrandBars data={byCat} x="category" series={brands.length ? brands : BRAND_ORDER} height={300} />
+            <Panel
+              title="By category"
+              note="Each category has only a few questions, so read single values with care."
+            >
+              <BrandBars
+                data={byCat}
+                x="category"
+                series={brands.length ? brands : BRAND_ORDER}
+                height={300}
+              />
             </Panel>
           </TabsContent>
 
@@ -447,8 +492,8 @@ export default function VisibilityPage() {
                 </table>
               ) : (
                 <Empty title="No verified facts yet">
-                  Add products and facts with a source to data/reference/products_v1.csv and reference_facts_v1.csv, then
-                  measure with accuracy checks.
+                  Add products and facts with a source to data/reference/products_v1.csv and
+                  reference_facts_v1.csv, then measure with accuracy checks.
                 </Empty>
               )}
             </Panel>
