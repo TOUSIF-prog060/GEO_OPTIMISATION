@@ -113,24 +113,43 @@ streamlit run app/Home.py
 | Lint & format | `ruff check . && ruff format .` |
 | Apply migrations | `python -m src.db` |
 | Provider smoke test | `python scripts/smoke_test_providers.py` |
+| Discovery: plan only (no keys needed) | `python scripts/run_discovery.py --panel v0 --dry-run` |
+| Discovery: small test run | `python scripts/run_discovery.py --panel v0 --limit 5` |
+| Discovery: full baseline | `python scripts/run_discovery.py --panel v0 --repeats 3` |
+
+## 🔎 Discovery engine (Phase 1)
+
+Asks each AI engine every prompt in the panel and stores the raw answers in Bronze.
+
+```
+prompt_panel_v0.csv ─▶ run_discovery() ─▶ Perplexity Sonar ┐
+                                     └──▶ OpenAI web search ┴─▶ bronze_runs / bronze_responses
+```
+
+- **Prompt panel:** [`data/reference/prompt_panel_v0.csv`](data/reference/prompt_panel_v0.csv) has 30 draft prompts (retailer choice, authenticity, Nykaa vs Sephora vs Tira, sunscreen, serums, makeup, haircare, fragrance). New panels go in as `prompt_panel_<version>.csv`. Don't edit a panel after a run has used it.
+- **Keys:** read only from `.env` and passed into the call functions. They're never stored. A run refuses to start if a key is missing, and the dry run shows which one.
+- **Reliability:** 4 parallel calls; timeouts, 429s and 5xx errors retried 3× with backoff; failed calls saved as error rows, never dropped; each answer committed as it arrives.
+- **Cost:** estimated per call from the prices in `configs/beauty_india.yaml` (fill these in).
+- **UI:** `streamlit run app/Home.py` → **Discovery** page: panel preview, call count, start a run, run history.
 
 ## 📁 Project structure
 
 ```
-├── app/                  Streamlit UI (Home.py + pages/)
+├── app/                  Streamlit UI (Home.py + pages/1_Discovery.py)
 ├── configs/              Project config: brands, aliases, providers (beauty_india.yaml)
 ├── data/
 │   ├── raw/              Raw API responses (git-ignored)
-│   └── reference/        Versioned reference data
+│   └── reference/        Versioned reference data (prompt_panel_v0.csv)
 ├── db/migrations/        SQL migrations (001_init, 002_core_schema)
 ├── docs/                 Architecture, data dictionary, decision / cost / meeting logs, model card
 ├── notebooks/            Exploration
 ├── reports/              Deliverables D1–D7 and final report
-├── scripts/              One-off utilities (provider smoke test)
+├── scripts/              CLI tools (run_discovery.py, smoke_test_providers.py)
 ├── src/
 │   ├── config.py         Typed settings from .env + YAML
 │   ├── db.py             Postgres connection + migration runner
-│   ├── discovery/        Ask AI engines, store raw answers
+│   ├── discovery/        Ask AI engines, store raw answers  ✅ built
+│   │                     (models, providers, panel, repository, runner)
 │   ├── diagnostics/      Parse mentions & citations, compute metrics
 │   ├── opportunities/    Detect gaps, rank recommendations
 │   ├── copilot/          Draft content variants
@@ -142,7 +161,7 @@ streamlit run app/Home.py
 ## 🗺️ Roadmap
 
 - [x] **Phase 0**: Scaffold, config, DB schema, provider smoke test
-- [ ] **Discovery**: run the prompt panel across both engines → Bronze
+- [x] **Discovery**: engine built (prompt panel → both engines → Bronze). First real run waits on API keys
 - [ ] **Diagnostics**: mention & citation parsing → Silver / Gold metrics
 - [ ] **Opportunities**: gap detection & recommendations
 - [ ] **Copilot**: versioned content drafting

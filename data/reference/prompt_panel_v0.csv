@@ -1,0 +1,31 @@
+prompt_id,text,category,intent,language
+RET-001,What is the best website to buy genuine makeup online in India?,retailer,where_to_buy,en
+RET-002,Which online beauty store in India sells 100% authentic products?,retailer,authenticity,en
+RET-003,Where can I buy international luxury beauty brands in India?,retailer,where_to_buy,en
+RET-004,Best app for shopping skincare products in India,retailer,where_to_buy,en
+RET-005,Which beauty website in India has the best discounts and sales?,retailer,price,en
+RET-006,Where should I buy beauty products online in India with fast delivery?,retailer,where_to_buy,en
+RET-007,Which Indian beauty store has the best loyalty or rewards program?,retailer,comparison,en
+RET-008,Is it safe to buy perfume online in India? Which site is trustworthy?,retailer,authenticity,en
+CMP-001,Nykaa vs Sephora India: which is better for buying makeup?,retailer,comparison,en
+CMP-002,Tira vs Nykaa: which beauty app is better?,retailer,comparison,en
+CMP-003,Sephora India vs Tira: where should I buy luxury skincare?,retailer,comparison,en
+SUN-001,What is the best sunscreen for oily skin in India under 1000 rupees?,sunscreen,recommendation,en
+SUN-002,Best sunscreen for Indian summers that does not leave a white cast,sunscreen,recommendation,en
+SUN-003,Where can I buy Korean sunscreens online in India?,sunscreen,where_to_buy,en
+MOI-001,Best moisturiser for dry skin in Indian winters,moisturiser,recommendation,en
+MOI-002,Best lightweight gel moisturiser for oily acne-prone skin in India,moisturiser,recommendation,en
+SER-001,Best vitamin C serum available in India for beginners,serum,recommendation,en
+SER-002,Which niacinamide serum is best for acne marks in India?,serum,ingredient,en
+SER-003,Best retinol serum to buy in India for anti-ageing,serum,ingredient,en
+MKP-001,Best long-lasting foundation for Indian skin tones,makeup,recommendation,en
+MKP-002,Best matte liquid lipstick for Indian skin under 1500 rupees,makeup,recommendation,en
+MKP-003,Where can I buy high-end makeup brands like Huda Beauty or Fenty in India?,makeup,where_to_buy,en
+MKP-004,Best concealer for dark circles for Indian skin,makeup,recommendation,en
+HAI-001,Best shampoo for hair fall in India,haircare,recommendation,en
+HAI-002,Best hair serum for frizzy hair in humid Indian weather,haircare,recommendation,en
+FRA-001,Best long-lasting perfumes for women available in India,fragrance,recommendation,en
+FRA-002,Where to buy original designer perfumes online in India?,fragrance,where_to_buy,en
+FRA-003,Best affordable perfumes for men in India under 3000 rupees,fragrance,price,en
+GFT-001,Best beauty gift sets to buy online in India,gifting,recommendation,en
+SKR-001,What is a good beginner skincare routine and where can I buy the products in India?,skincare,where_to_buy,en
