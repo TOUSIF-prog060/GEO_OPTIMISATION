@@ -196,3 +196,23 @@ n_baseline · n_retest · ci_low · ci_high (95% Wald CI of retest − baseline)
 - `prompts.panel_version = 'custom'`: questions typed into the dashboard. `prompt_id = 'CUS-' + first 10 hex of sha256(lower-cased, whitespace-collapsed text)`, so the same question always maps to the same prompt and its runs can be compared. `category` is chosen by the user (default `custom`), `intent = 'custom'`.
 - Runs that ask custom questions have `bronze_runs.run_type = 'adhoc'` and `panel_version = 'custom'`. They are measured like any run (Silver and Gold rows) but are excluded from the Overview, which uses `run_type = 'baseline'` only.
 - No schema change: `run_type` already allowed `adhoc`.
+
+## Modelling feature table (`data/processed/modelling/features_<sha10>[_strict].csv`)
+
+Built by `src/modelling/dataset.py` from the team's clean dataset (`responses_clean_v1.0.csv`,
+data-v1.0) or the raw collection workbook. One row per usable answer. Not a database table;
+the frozen source copy sits in `data/raw/collected/` named by its SHA-256.
+
+| Column | Type | Meaning |
+|---|---|---|
+| response_id | text | The source row's `run_id` (e.g. S001, T162) |
+| prompt_id | text | Question id (B07E / B07H) |
+| group_id | text | `base_id` (B07): English and Hinglish twins share it; CV folds never split it |
+| run_no | int | Repeat number |
+| engine, question_type, category, language, collection_method | text | Model factors, lower-cased |
+| named_sephora_india, named_nykaa, named_tira | bool | Brand named, found with the diagnostics alias rules |
+| y | int | Target: 1 when the target brand is named |
+
+Rows kept: `use_in_model = yes` and non-empty answer; with `--strict`, also `use_strict = TRUE`.
+`plan_group` is not a factor: it follows the engine exactly (ChatGPT and Claude paid; Gemini,
+Google AI Mode and Perplexity free).

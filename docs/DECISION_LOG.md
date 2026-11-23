@@ -101,3 +101,22 @@ One entry per decision: date, decision, alternatives considered, reason, owner.
 - **Decision:** reports are HTML with inline SVG charts, printed to PDF by the installed Chrome or Edge (`src/report_pdf.py`), so no PDF library is added. Two reports: a run report (`src/run_report.py`, Measure visibility and Overview) and the evaluation report (`evals/report_pdf.py`, Check accuracy). Built as background jobs; downloaded from `/api/reports/{file}`, which only serves `run_report_*` / `evaluation_report_*` files from `reports/runs` and `reports/evals`.
 - **Deployment note:** a host without Chrome/Edge falls back to the HTML report (the user is told). On Render or similar, install Chromium in the image to get PDFs.
 - **Print colours:** brand hues re-stepped to pass colour-blind and contrast checks (Sephora #9b3f86, Nykaa #e2607f, Tira #1f7fc0); every chart is also directly labelled.
+
+## 2026-11-24: Visibility models (charter section 11: Baseline, M1, M2)
+
+- Data: the team's clean dataset data-v1.0 (775 rows; 706 in `use_in_model`, 640 in `use_strict`).
+  Its SHA-256 (`8d056e8b…`) differs from the one quoted in the dataset README (`dbf48d86…`), so
+  every run records the hash of the file actually used.
+- Target: Sephora India named (110 of 706). Our alias reader agrees with the team's word search
+  on all 706 rows.
+- Factors: engine, question type, category, language, collection method. Plan tier is left out
+  because it is fully confounded with engine; model version because it is missing for most rows.
+- Validation: 5-fold cross-validation grouped by `base_id`, so no question (in either language)
+  is in both training and test. Metrics: PR-AUC, F1 at the training-best threshold, Brier.
+- Choice rule: the simplest model that beats the baseline and is within one standard error of
+  the best. Odds ratios come from an unpenalised logistic fit with errors clustered by question.
+- Libraries (approved 2026-11-24): scikit-learn, statsmodels, mlflow (local `mlruns/`), openpyxl.
+- Result: no model beat the baseline on unseen questions (baseline PR-AUC 0.344 ± 0.310, M1 0.273,
+  M2 RF 0.210, M2 GB 0.273; strict set gives the same order). The baseline is kept. With 19
+  question groups, and "where to buy" resting on one question, the data cannot show that the
+  factors predict new questions better than per-cell rates.

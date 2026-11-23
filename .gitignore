@@ -28,3 +28,7 @@ GEO_OPTIMISATION/
 # Generated reports (download from the dashboard; regenerate any time)
 reports/runs/
 reports/evals/
+reports/models/
+
+# Modelling snapshots (derived from the team dataset, kept local)
+data/processed/modelling/
