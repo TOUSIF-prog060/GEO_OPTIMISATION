@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu } from "lucide-react";
+import { BarChart3, Compass, House, Menu, MessagesSquare, ShieldCheck, Wrench } from "lucide-react";
 import { useState } from "react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
+import { startTour, Tour } from "@/components/tour";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useApi } from "@/hooks/use-api";
@@ -13,31 +14,30 @@ import type { Status } from "@/lib/api";
 import { providerLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type Counts = { counts: Record<string, number> };
-
-// The workflow really is a sequence, so these steps are numbered.
-const STEPS = [
-  { href: "/discovery", label: "Ask the engines", count: "runs", unit: "runs" },
-  { href: "/visibility", label: "Measure visibility", count: "answers", unit: "answers" },
-  { href: "/opportunities", label: "Find gaps", count: "opportunities", unit: "gaps" },
-  { href: "/copilot", label: "Draft content", count: "drafts", unit: "drafts" },
-  { href: "/agent", label: "Run the agent", count: null, unit: "" },
-  { href: "/experiments", label: "Re-test", count: "experiments_done", unit: "done" },
+// Four steps, in the order a person actually uses them.
+export const STEPS = [
+  { href: "/ask", tour: "nav-ask", icon: MessagesSquare, label: "Ask AI", note: "Send questions to the AI engines" },
+  { href: "/results", tour: "nav-results", icon: BarChart3, label: "See results", note: "How often each brand is named" },
+  { href: "/fix", tour: "nav-fix", icon: Wrench, label: "Fix gaps", note: "Find problems and draft fixes" },
+  { href: "/check", tour: "nav-check", icon: ShieldCheck, label: "Check it worked", note: "Re-test and check accuracy" },
 ] as const;
 
 function Nav({ onNavigate }: { onNavigate?: () => void }) {
   const path = usePathname();
-  const { data } = useApi<Counts>("/overview");
   const { data: status } = useApi<Status>("/status");
-  const counts = data?.counts ?? {};
+  const engines = status?.providers ?? [];
+  const live = engines.filter((p) => p.has_key);
 
-  const item = (href: string, active: boolean) =>
+  const item = (active: boolean) =>
     cn(
-      "group flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+      "group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors",
       "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-      active
-        ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-muted",
+    );
+  const icon = (active: boolean) =>
+    cn(
+      "grid size-8 shrink-0 place-items-center rounded-lg transition-colors",
+      active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-hover:text-primary",
     );
 
   return (
@@ -53,41 +53,34 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
         </span>
       </Link>
 
-      <div className="flex flex-col gap-1">
-        <Link href="/" onClick={onNavigate} className={item("/", path === "/")}>
-          <span className="grid size-6 place-items-center rounded-full border text-[0.7rem]">
-            ◎
-          </span>
-          Overview
-        </Link>
-      </div>
+      <Link href="/" onClick={onNavigate} className={item(path === "/")} data-tour="nav-home">
+        <span className={icon(path === "/")}>
+          <House className="size-4" />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-medium">Home</span>
+          <span className="block text-xs text-muted-foreground">Summary and your next step</span>
+        </span>
+      </Link>
 
-      <div className="flex flex-col gap-1">
-        <p className="px-3 pb-1 text-xs text-muted-foreground">Workflow</p>
+      <div>
+        <p className="px-3 pb-2 text-xs font-medium text-muted-foreground">Four steps</p>
         <ol className="relative flex flex-col gap-1">
-          <span
-            aria-hidden
-            className="absolute left-[1.45rem] top-4 bottom-4 w-px bg-border"
-          />
+          <span aria-hidden className="absolute top-6 bottom-6 left-[1.75rem] w-px bg-border" />
           {STEPS.map((s, i) => {
             const active = path.startsWith(s.href);
-            const n = s.count ? counts[s.count] : undefined;
             return (
               <li key={s.href} className="relative">
-                <Link href={s.href} onClick={onNavigate} className={item(s.href, active)}>
-                  <span
-                    className={cn(
-                      "num relative grid size-6 shrink-0 place-items-center rounded-full border bg-sidebar text-[0.7rem]",
-                      active && "border-primary bg-primary text-primary-foreground",
-                      !active && n && n > 0 && "border-primary/50 text-primary",
-                    )}
-                  >
-                    {i + 1}
+                <Link href={s.href} onClick={onNavigate} className={item(active)} data-tour={s.tour}>
+                  <span className={cn(icon(active), "relative bg-sidebar", active && "bg-primary")}>
+                    <s.icon className="size-4" />
                   </span>
-                  <span className="flex-1">{s.label}</span>
-                  {n != null && n >= 0 && (
-                    <span className="num text-xs text-muted-foreground">{n}</span>
-                  )}
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">
+                      <span className="num text-muted-foreground">{i + 1}.</span> {s.label}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">{s.note}</span>
+                  </span>
                 </Link>
               </li>
             );
@@ -95,44 +88,48 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
         </ol>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <Link
-          href="/validation"
-          onClick={onNavigate}
-          className={item("/validation", path.startsWith("/validation"))}
+      <div className="mt-auto flex flex-col gap-4 px-1 pb-2">
+        <Button
+          variant="outline"
+          className="h-9 justify-start"
+          onClick={() => {
+            onNavigate?.();
+            startTour();
+          }}
+          data-tour="tour-button"
+          hint="A one-minute walkthrough of the app. You can stop it at any time."
         >
-          <span className="grid size-6 place-items-center rounded-full border text-[0.7rem]">
-            ✓
-          </span>
-          Check accuracy
-        </Link>
-        <Link
-          href="/models"
-          onClick={onNavigate}
-          className={item("/models", path.startsWith("/models"))}
-        >
-          <span className="grid size-6 place-items-center rounded-full border text-[0.7rem]">
-            ƒ
-          </span>
-          What drives visibility
-        </Link>
-      </div>
+          <Compass /> Show me around
+        </Button>
 
-      <div className="mt-auto flex flex-col gap-3 px-3 pb-2">
+        <div data-tour="help-legend" className="space-y-1.5 rounded-lg bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">
+          <p className="flex items-center gap-2">
+            <span className="grid size-4 place-items-center rounded-full border text-[0.6rem] font-semibold">?</span>
+            Click for a plain explanation
+          </p>
+          <p>Hover any button to see what it does.</p>
+        </div>
+
         {status && (
-          <ul className="space-y-1.5 text-xs">
-            <li className="flex items-center gap-2">
-              <Dot ok={status.db.ok} />
-              Database {status.db.ok ? "connected" : "offline"}
-            </li>
-            {status.providers.map((p) => (
-              <li key={p.name} className="flex items-center gap-2">
-                <Dot ok={p.has_key} />
-                <span>{providerLabel(p.name)}</span>
-                <span className="text-muted-foreground">{p.has_key ? p.model : "no key"}</span>
+          <details className="group px-2 text-xs">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-muted-foreground hover:text-foreground">
+              <span className={cn("size-2 rounded-full", status.db.ok ? "bg-gain" : "bg-loss")} />
+              {status.db.ok ? "Connected" : "Database offline"} · {live.length} of {engines.length} AI engines
+              <span className="ml-auto group-open:rotate-180">⌄</span>
+            </summary>
+            <ul className="mt-2 space-y-1.5 pl-1">
+              <li className="flex items-center gap-2">
+                <Dot ok={status.db.ok} /> Database {status.db.ok ? "connected" : "offline"}
               </li>
-            ))}
-          </ul>
+              {engines.map((p) => (
+                <li key={p.name} className="flex items-center gap-2">
+                  <Dot ok={p.has_key} />
+                  <span>{providerLabel(p.name)}</span>
+                  <span className="text-muted-foreground">{p.has_key ? "ready" : "no key yet"}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
         <ThemeToggle />
       </div>
@@ -141,19 +138,14 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function Dot({ ok }: { ok: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={cn("size-1.5 rounded-full", ok ? "bg-gain" : "bg-muted-foreground/40")}
-    />
-  );
+  return <span aria-hidden className={cn("size-1.5 rounded-full", ok ? "bg-gain" : "bg-muted-foreground/40")} />;
 }
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="flex min-h-dvh">
-      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 border-r bg-sidebar px-3 py-6 lg:block">
+      <aside className="sticky top-0 hidden h-dvh w-72 shrink-0 overflow-y-auto border-r bg-sidebar px-3 py-6 lg:block">
         <Nav />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -164,19 +156,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 <Menu />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-72 bg-sidebar px-3 py-6">
+            <SheetContent side="left" className="w-80 overflow-y-auto bg-sidebar px-3 py-6">
               <SheetTitle className="sr-only">Menu</SheetTitle>
               <Nav onNavigate={() => setOpen(false)} />
             </SheetContent>
           </Sheet>
-          <span className="font-[family-name:var(--font-bricolage)] font-semibold">
-            Beyond the Search Bar
-          </span>
+          <span className="font-[family-name:var(--font-bricolage)] font-semibold">Beyond the Search Bar</span>
+          <Button variant="ghost" size="icon" className="ml-auto" aria-label="Show me around" onClick={startTour}>
+            <Compass />
+          </Button>
         </header>
-        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 py-8 sm:px-8 lg:py-10">
-          {children}
-        </main>
+        <main className="mx-auto w-full max-w-[1180px] flex-1 px-4 py-8 sm:px-8 lg:py-10">{children}</main>
       </div>
+      <Tour />
     </div>
   );
 }

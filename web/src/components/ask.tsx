@@ -124,7 +124,7 @@ function Results({ runIds }: { runIds: string[] }) {
       <p className="text-xs text-muted-foreground">
         Stored with every answer and measured automatically. These one-off runs are kept out of the Overview
         numbers, which use only the fixed question panel.{" "}
-        <Link className="text-primary hover:underline" href={`/visibility?run=${runIds[0]}`}>
+        <Link className="text-primary hover:underline" href={`/results?tab=visibility&run=${runIds[0]}`}>
           Open in Measure visibility
         </Link>
       </p>
@@ -278,7 +278,7 @@ export function AskOwnQuestion({
               "Type a question and pick an engine."
             )}
           </div>
-          <Button
+          <Button hint="Sends your question to every engine you ticked, then reads the answers for brand names. About a minute."
             size="lg"
             className="w-full"
             disabled={

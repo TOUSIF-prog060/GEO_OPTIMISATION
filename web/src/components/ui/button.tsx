@@ -3,6 +3,8 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { Slot } from "radix-ui"
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+
 const buttonVariants = cva(
   "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
@@ -45,14 +47,17 @@ function Button({
   variant = "default",
   size = "default",
   asChild = false,
+  hint,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    /** Plain-language note shown on hover or focus: what clicking this will do. */
+    hint?: React.ReactNode
   }) {
   const Comp = asChild ? Slot.Root : "button"
 
-  return (
+  const button = (
     <Comp
       data-slot="button"
       data-variant={variant}
@@ -60,6 +65,20 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
+  )
+  if (!hint) return button
+  // Wrapped in a focusable span so the hint also shows on disabled buttons (explaining why).
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex" tabIndex={props.disabled ? 0 : -1}>
+          {button}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-64 text-left leading-snug">
+        {hint}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

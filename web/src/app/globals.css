@@ -171,3 +171,40 @@
   to { transform: scaleX(1); }
 }
 .swatch-in { transform-origin: left; animation: swatch-in 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* ---- guided help: "How this works" strip ---- */
+@keyframes step-focus {
+  0%, 30% { opacity: 1; transform: translateY(0); }
+  33%, 100% { opacity: 0.55; transform: translateY(0); }
+}
+@keyframes step-ring {
+  0%, 30% { box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 22%, transparent); background: var(--primary); color: var(--primary-foreground); }
+  33%, 100% { box-shadow: 0 0 0 0 transparent; background: var(--card); color: var(--primary); }
+}
+@keyframes track-fill {
+  0% { transform: scaleX(0); }
+  95% { transform: scaleX(1); }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+.step-cycle { animation: step-focus 7.5s ease-in-out infinite both; }
+.step-cycle .step-dot { animation: step-ring 7.5s ease-in-out infinite both; }
+.track-fill { transform-origin: left; animation: track-fill 7.5s linear infinite; }
+
+/* ---- page-level entrance: one orchestrated reveal ---- */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise-in { animation: rise-in 480ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* ---- guided tour spotlight ---- */
+.tour-spot {
+  transition: top 420ms cubic-bezier(0.2, 0.8, 0.2, 1), left 420ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 420ms cubic-bezier(0.2, 0.8, 0.2, 1), height 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 0 0 9999px color-mix(in oklch, var(--foreground) 55%, transparent);
+}
+@keyframes tour-pulse {
+  0%, 100% { outline-color: color-mix(in oklch, var(--primary) 90%, transparent); outline-offset: 2px; }
+  50% { outline-color: color-mix(in oklch, var(--primary) 30%, transparent); outline-offset: 6px; }
+}
+.tour-pulse { outline: 2px solid; animation: tour-pulse 1.6s ease-in-out infinite; }

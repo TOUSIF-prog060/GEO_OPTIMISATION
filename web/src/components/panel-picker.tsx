@@ -119,11 +119,11 @@ export function PanelPicker({
               aria-label="Search questions"
             />
           </div>
-          <Button variant="outline" size="sm" onClick={() => toggle(visibleIds, !allVisibleOn)}>
+          <Button hint="Tick or untick every question shown in the list." variant="outline" size="sm" onClick={() => toggle(visibleIds, !allVisibleOn)}>
             {allVisibleOn ? "Clear" : "Select"} {query ? "matches" : "all"}
           </Button>
           {selected.size > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+            <Button hint="Untick every question." variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
               <X /> Clear selection
             </Button>
           )}
@@ -298,7 +298,7 @@ export function PanelPicker({
           )}
         </div>
 
-        <Button
+        <Button hint="Sends the ticked questions to each chosen engine. Results appear in step 2, See results."
           size="lg"
           className="w-full"
           disabled={!shownPlan || shownPlan.missing_keys.length > 0 || run.busy}

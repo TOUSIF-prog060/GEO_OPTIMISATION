@@ -44,7 +44,13 @@ export function ReportButton({ kind, runId, label, disabled, disabledReason, var
       <Button
         variant={variant}
         disabled={disabled || job.busy}
-        title={disabled ? disabledReason : undefined}
+        hint={
+          disabled
+            ? disabledReason
+            : kind === "run"
+              ? "Creates a printable PDF of this round: brand comparison, gaps and every answer. Downloads in a few seconds."
+              : "Runs every accuracy test, then downloads a PDF with charts and sign-off boxes. About 10 seconds."
+        }
         onClick={() =>
           job.start(
             "/jobs/report",

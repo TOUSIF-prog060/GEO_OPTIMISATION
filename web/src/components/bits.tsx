@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Job, Run } from "@/lib/api";
 import { brandColor } from "@/lib/brands";
 import { providerLabel, when } from "@/lib/format";
+import { useEmbedded } from "@/components/section";
 import { cn } from "@/lib/utils";
 
 export function PageHeader({
@@ -19,6 +20,17 @@ export function PageHeader({
   lede?: React.ReactNode;
   actions?: React.ReactNode;
 }) {
+  const embedded = useEmbedded();
+  if (embedded)
+    return (
+      <header className="mb-6 flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-2xl">
+          <h2 className="text-xl font-semibold">{title}</h2>
+          {lede && <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{lede}</p>}
+        </div>
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      </header>
+    );
   return (
     <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="max-w-2xl">
