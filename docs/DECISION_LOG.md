@@ -120,3 +120,32 @@ One entry per decision: date, decision, alternatives considered, reason, owner.
   M2 RF 0.210, M2 GB 0.273; strict set gives the same order). The baseline is kept. With 19
   question groups, and "where to buy" resting on one question, the data cannot show that the
   factors predict new questions better than per-cell rates.
+
+## 2026-11-24: Model evaluation fixed; insights on the dashboard
+
+The first evaluation had three weaknesses, now fixed:
+- **One noisy split.** A single 5-fold split over 19 question groups gave fold scores that
+  swung widely (baseline sd 0.31), mostly depending on which fold held the one "where to buy"
+  question. Grouped CV is now repeated 10 times with reshuffled folds. Each run is scored on its
+  pooled out-of-fold predictions, and every model sees the same folds. A model must beat the
+  baseline in more than half the runs, as well as on the mean, to be chosen.
+- **In-sample cut-offs.** F1 cut-offs were tuned on in-sample predictions, so the random forest
+  memorised its training data and got an over-high cut-off (F1 0.05). Cut-offs now come from
+  inner grouped out-of-fold predictions of the training rows.
+- **Fixed C.** M1's C was fixed at 1.0. It is now tuned by inner grouped CV over
+  0.01 to 10 (C = 1.0 was chosen).
+
+New result:
+
+| Model | Main set PR-AUC | Strict set PR-AUC |
+|---|---|---|
+| Baseline | 0.213 | 0.193 |
+| M1 | 0.250 (wins 6 of 10 runs) | 0.139 |
+| M2 RF | 0.177 | 0.136 |
+| M2 GB | 0.217 | 0.165 |
+
+M1 is chosen on the main set but not on the strict set, so it is reported as tentative.
+Odds ratios are unchanged (they come from the unpenalised fit).
+
+Dashboard: new page "What drives visibility" (`/models`), fed by `GET /api/models` from the
+latest saved runs. It does no retraining and needs no database.

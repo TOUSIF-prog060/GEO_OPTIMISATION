@@ -23,7 +23,7 @@ from sklearn.base import clone
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, brier_score_loss, f1_score
-from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
 
 from src.common.stats import wilson_ci
 from src.config import ROOT_DIR, get_settings
@@ -32,10 +32,12 @@ from src.modelling.dataset import build_features, design_matrix, freeze_workbook
 from src.modelling.models import (
     CellRate,
     DatasetInfo,
+    FactorRate,
     FoldScore,
     Importance,
     ModelSummary,
     OddsRatio,
+    RepeatScore,
     TrainInput,
     TrainOutput,
 )
@@ -54,11 +56,15 @@ class InsufficientDataError(ValueError):
     """Too few positives for the number of factors (about 10 per factor)."""
 
 
+M1_CS = (0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0)
+INNER_SPLITS = 3
+
+
 def make_estimators(seed: int) -> dict[str, Any]:
     return {
         M1: LogisticRegression(C=1.0, max_iter=5000),
         M2_RF: RandomForestClassifier(
-            n_estimators=500, min_samples_leaf=5, random_state=seed, n_jobs=-1
+            n_estimators=300, min_samples_leaf=5, random_state=seed, n_jobs=-1
         ),
         M2_GB: HistGradientBoostingClassifier(
             max_depth=3, learning_rate=0.05, max_iter=200, random_state=seed
@@ -79,7 +85,7 @@ def baseline_predict(train: pd.DataFrame, test: pd.DataFrame) -> np.ndarray:
 
 
 def best_threshold(y: np.ndarray, p: np.ndarray) -> float:
-    """Probability cut-off with the highest F1 on the training data."""
+    """Probability cut-off with the highest F1 on the given predictions."""
     best_t, best_f1 = 0.5, -1.0
     for t in np.unique(p):
         f1 = f1_score(y, (p >= t).astype(int), zero_division=0)
@@ -88,10 +94,72 @@ def best_threshold(y: np.ndarray, p: np.ndarray) -> float:
     return best_t
 
 
-def score(model: str, fold: int, y: np.ndarray, p: np.ndarray, threshold: float) -> FoldScore:
+def inner_splits(groups: np.ndarray, n: int = INNER_SPLITS) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Grouped splits inside a training set, for tuning and thresholds (never sees the test)."""
+    k = min(n, len(set(groups)))
+    if k < 2:
+        return []
+    return list(GroupKFold(n_splits=k).split(np.zeros(len(groups)), groups=groups))
+
+
+def tune_m1_c(X: pd.DataFrame, y: np.ndarray, groups: np.ndarray) -> float:
+    """L2 strength with the best inner grouped-CV PR-AUC; 1.0 if it cannot be tuned."""
+    splits = [s for s in inner_splits(groups) if 0 < y[s[1]].sum() < len(s[1])]
+    best_c, best = 1.0, -1.0
+    for c in M1_CS:
+        aps = []
+        for tr, te in splits:
+            if y[tr].min() == y[tr].max():
+                continue
+            m = LogisticRegression(C=c, max_iter=5000).fit(X.iloc[tr], y[tr])
+            aps.append(average_precision_score(y[te], m.predict_proba(X.iloc[te])[:, 1]))
+        if aps and float(np.mean(aps)) > best:
+            best_c, best = c, float(np.mean(aps))
+    return best_c
+
+
+def fit_predict(
+    name: str,
+    est: Any,
+    table: pd.DataFrame,
+    X: pd.DataFrame,
+    tr: np.ndarray,
+    te: np.ndarray,
+    groups: np.ndarray,
+) -> np.ndarray:
+    """Fit one model on rows tr (tuning only inside tr) and predict rows te."""
+    if name == BASELINE:
+        return baseline_predict(table.iloc[tr], table.iloc[te])
+    y = table["y"].to_numpy()
+    model = clone(est)
+    if name == M1:
+        model.set_params(C=tune_m1_c(X.iloc[tr], y[tr], groups[tr]))
+    model.fit(X.iloc[tr], y[tr])
+    return model.predict_proba(X.iloc[te])[:, 1]
+
+
+def inner_threshold(
+    name: str, est: Any, table: pd.DataFrame, X: pd.DataFrame, tr: np.ndarray, groups: np.ndarray
+) -> float:
+    """F1-best cut-off chosen on inner out-of-fold predictions of the training rows, so a model
+    that memorises its training data does not get an over-high cut-off."""
+    y = table["y"].to_numpy()
+    oof = np.full(len(tr), np.nan)
+    for itr, ite in inner_splits(groups[tr]):
+        if y[tr][itr].min() == y[tr][itr].max():
+            continue
+        oof[ite] = fit_predict(name, est, table, X, tr[itr], tr[ite], groups)
+    ok = ~np.isnan(oof)
+    return best_threshold(y[tr][ok], oof[ok]) if ok.any() else 0.5
+
+
+def score(
+    model: str, fold: int, y: np.ndarray, p: np.ndarray, threshold: float, repeat: int = 1
+) -> FoldScore:
     has_pos = bool(y.sum()) and bool((1 - y).sum())
     return FoldScore(
         model=model,
+        repeat=repeat,
         fold=fold,
         n_test=len(y),
         n_pos_test=int(y.sum()),
@@ -103,8 +171,10 @@ def score(model: str, fold: int, y: np.ndarray, p: np.ndarray, threshold: float)
 
 
 def cross_validate(
-    table: pd.DataFrame, X: pd.DataFrame, n_splits: int, seed: int
-) -> list[FoldScore]:
+    table: pd.DataFrame, X: pd.DataFrame, n_splits: int, seed: int, n_repeats: int = 1
+) -> tuple[list[FoldScore], list[RepeatScore]]:
+    """Grouped CV repeated with reshuffled folds. Every model sees the same folds; each run is
+    scored on its pooled out-of-fold predictions, which is steadier than averaging small folds."""
     y = table["y"].to_numpy()
     groups = table["group_id"].to_numpy()
     if len(set(groups)) < n_splits:
@@ -112,59 +182,99 @@ def cross_validate(
             f"Only {len(set(groups))} question groups; need at least {n_splits} "
             f"for {n_splits} folds"
         )
-    cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    estimators = make_estimators(seed)
-    scores: list[FoldScore] = []
-    for fold, (tr, te) in enumerate(cv.split(X, y, groups), start=1):
-        p_tr = baseline_predict(table.iloc[tr], table.iloc[tr])
-        p_te = baseline_predict(table.iloc[tr], table.iloc[te])
-        scores.append(score(BASELINE, fold, y[te], p_te, best_threshold(y[tr], p_tr)))
-        for name, est in estimators.items():
-            m = clone(est).fit(X.iloc[tr], y[tr])
-            p_tr = m.predict_proba(X.iloc[tr])[:, 1]
-            p_te = m.predict_proba(X.iloc[te])[:, 1]
-            scores.append(score(name, fold, y[te], p_te, best_threshold(y[tr], p_tr)))
-    return scores
+    estimators: dict[str, Any] = {BASELINE: None, **make_estimators(seed)}
+    folds: list[FoldScore] = []
+    runs: list[RepeatScore] = []
+    for r in range(1, n_repeats + 1):
+        cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed + r - 1)
+        oof = {name: np.zeros(len(y)) for name in estimators}
+        hits = {name: np.zeros(len(y), dtype=int) for name in estimators}
+        for fold, (tr, te) in enumerate(cv.split(X, y, groups), start=1):
+            for name, est in estimators.items():
+                p_te = fit_predict(name, est, table, X, tr, te, groups)
+                t = inner_threshold(name, est, table, X, tr, groups)
+                oof[name][te] = p_te
+                hits[name][te] = (p_te >= t).astype(int)
+                folds.append(score(name, fold, y[te], p_te, t, repeat=r))
+        for name in estimators:
+            runs.append(
+                RepeatScore(
+                    model=name,
+                    repeat=r,
+                    pr_auc=float(average_precision_score(y, oof[name])),
+                    brier=float(brier_score_loss(y, oof[name])),
+                    f1=float(f1_score(y, hits[name], zero_division=0)),
+                )
+            )
+    return folds, runs
 
 
-def summarise(scores: list[FoldScore]) -> list[ModelSummary]:
+def summarise(scores: list[FoldScore], runs: list[RepeatScore] | None = None) -> list[ModelSummary]:
+    """Per-model summary. With CV runs: mean and sd over runs of pooled PR-AUC, plus how many
+    runs beat the baseline on the same folds. Without: mean over folds."""
     out = []
+    base_by_run = {r.repeat: r.pr_auc for r in runs or [] if r.model == BASELINE}
     for name in SIMPLICITY_ORDER:
         rows = [s for s in scores if s.model == name]
-        if not rows:
-            continue
-        aucs = [s.pr_auc for s in rows if s.pr_auc is not None]
-        out.append(
-            ModelSummary(
-                model=name,
-                pr_auc_mean=float(np.mean(aucs)) if aucs else None,
-                pr_auc_sd=float(np.std(aucs, ddof=1)) if len(aucs) > 1 else None,
-                f1_mean=float(np.mean([s.f1 for s in rows])),
-                brier_mean=float(np.mean([s.brier for s in rows])),
-                n_folds=len(rows),
+        mine = [r for r in runs or [] if r.model == name]
+        if mine:
+            aucs = [r.pr_auc for r in mine]
+            wins = sum(r.pr_auc > base_by_run.get(r.repeat, np.inf) for r in mine)
+            out.append(
+                ModelSummary(
+                    model=name,
+                    pr_auc_mean=float(np.mean(aucs)),
+                    pr_auc_sd=float(np.std(aucs, ddof=1)) if len(aucs) > 1 else 0.0,
+                    f1_mean=float(np.mean([r.f1 for r in mine])),
+                    brier_mean=float(np.mean([r.brier for r in mine])),
+                    n_folds=len(rows),
+                    n_runs=len(mine),
+                    wins_vs_baseline=None if name == BASELINE else int(wins),
+                )
             )
-        )
+        elif rows:
+            aucs = [s.pr_auc for s in rows if s.pr_auc is not None]
+            out.append(
+                ModelSummary(
+                    model=name,
+                    pr_auc_mean=float(np.mean(aucs)) if aucs else None,
+                    pr_auc_sd=float(np.std(aucs, ddof=1)) if len(aucs) > 1 else None,
+                    f1_mean=float(np.mean([s.f1 for s in rows])),
+                    brier_mean=float(np.mean([s.brier for s in rows])),
+                    n_folds=len(rows),
+                )
+            )
     return out
 
 
 def choose_model(summary: list[ModelSummary]) -> tuple[str, str]:
     """Simplest model that beats the baseline's PR-AUC and is within one standard error of the
-    best model (one-standard-error rule). Baseline if nothing beats it."""
+    best model (one-standard-error rule). With CV runs it must also beat the baseline in more
+    than half the runs on the same folds. Baseline if nothing qualifies."""
     by = {s.model: s for s in summary if s.pr_auc_mean is not None}
     if BASELINE not in by:
         return BASELINE, "Baseline kept: PR-AUC could not be computed."
     base = by[BASELINE].pr_auc_mean
     best = max(by.values(), key=lambda s: s.pr_auc_mean or 0.0)
-    se = (best.pr_auc_sd or 0.0) / math.sqrt(best.n_folds)
+    se = (best.pr_auc_sd or 0.0) / math.sqrt(best.n_runs or best.n_folds)
     for name in SIMPLICITY_ORDER[1:]:
         s = by.get(name)
-        if s and s.pr_auc_mean > base and s.pr_auc_mean >= best.pr_auc_mean - se:
-            return name, (
-                f"{name} is the simplest model that beats the baseline "
-                f"(PR-AUC {s.pr_auc_mean:.3f} vs {base:.3f}) and is within one standard error "
-                f"of the best ({best.model}, {best.pr_auc_mean:.3f} ± {se:.3f})."
-            )
-    return BASELINE, f"No model beat the baseline's PR-AUC ({base:.3f}); the baseline is kept."
+        if not s or s.pr_auc_mean <= base or s.pr_auc_mean < best.pr_auc_mean - se:
+            continue
+        if s.wins_vs_baseline is not None and s.wins_vs_baseline * 2 <= s.n_runs:
+            continue
+        wins = ""
+        if s.wins_vs_baseline is not None:
+            wins = f", winning {s.wins_vs_baseline} of {s.n_runs} runs"
+        return name, (
+            f"{name} is the simplest model that beats the baseline "
+            f"(PR-AUC {s.pr_auc_mean:.3f} vs {base:.3f}{wins}) and is within one standard "
+            f"error of the best ({best.model}, {best.pr_auc_mean:.3f} ± {se:.3f})."
+        )
+    return BASELINE, (
+        f"No model beat the baseline's PR-AUC ({base:.3f}) reliably on unseen questions; "
+        "the baseline is kept."
+    )
 
 
 def odds_ratios(table: pd.DataFrame, X: pd.DataFrame, warn: list[str]) -> list[OddsRatio]:
@@ -255,6 +365,27 @@ def baseline_cells(table: pd.DataFrame) -> list[CellRate]:
     return out
 
 
+def factor_rates(table: pd.DataFrame, factors: list[str]) -> list[FactorRate]:
+    """Share of answers naming the brand for every level of every factor, with Wilson 95%."""
+    out = []
+    for f in factors:
+        for level, g in table.groupby(f):
+            n, x = len(g), int(g["y"].sum())
+            ci = wilson_ci(x, n)
+            out.append(
+                FactorRate(
+                    factor=f,
+                    level=str(level),
+                    n=n,
+                    positives=x,
+                    rate=x / n,
+                    ci_low=ci[0] if ci else None,
+                    ci_high=ci[1] if ci else None,
+                )
+            )
+    return out
+
+
 def check_size(n_pos: int, n_neg: int, n_factors: int, n_cols: int, inp: TrainInput) -> list[str]:
     need = inp.min_positives_per_factor * n_factors
     events = min(n_pos, n_neg)
@@ -307,8 +438,9 @@ def run_training(inp: TrainInput) -> TrainOutput:
     warn = check_size(n_pos, len(table) - n_pos, len(inp.factors), X.shape[1], inp)
     warn += thin_levels(table, inp.factors)
 
-    scores = cross_validate(table, X, inp.n_splits, inp.seed)
-    summary = summarise(scores)
+    scores, runs = cross_validate(table, X, inp.n_splits, inp.seed, inp.n_cv_repeats)
+    summary = summarise(scores, runs)
+    m1_c = tune_m1_c(X, table["y"].to_numpy(), table["group_id"].to_numpy())
     chosen, reason = choose_model(summary)
     ors = odds_ratios(table, X, warn)
     est = make_estimators(inp.seed)
@@ -342,7 +474,11 @@ def run_training(inp: TrainInput) -> TrainOutput:
         positives_per_column=n_pos / max(X.shape[1], 1),
         warnings=warn,
         folds=scores,
+        repeats=runs,
         summary=summary,
+        m1_c=m1_c,
+        prevalence=n_pos / len(table),
+        factor_rates=factor_rates(table, inp.factors),
         chosen=chosen,
         choice_reason=reason,
         odds_ratios=ors,
@@ -352,11 +488,13 @@ def run_training(inp: TrainInput) -> TrainOutput:
     )
 
     # Artefacts: fitted models on all data, tables, the model card.
+    est[M1].set_params(C=m1_c)
     final = {name: clone(e).fit(X, table["y"]) for name, e in est.items()}
     joblib.dump({"models": final, "columns": list(X.columns), "factors": inp.factors,
                  "reference_levels": refs, "chosen": chosen, "data_sha256": sha},
                 out_dir / "models.joblib")  # fmt: skip
     pd.DataFrame([s.model_dump() for s in scores]).to_csv(out_dir / "fold_scores.csv", index=False)
+    pd.DataFrame([r.model_dump() for r in runs]).to_csv(out_dir / "cv_runs.csv", index=False)
     pd.DataFrame([o.model_dump() for o in ors]).to_csv(out_dir / "odds_ratios.csv", index=False)
     write_card(output, out_dir / "model_card.md")
 
@@ -381,6 +519,7 @@ def main() -> None:
     p.add_argument("--target", default=None)
     p.add_argument("--folds", type=int, default=5)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--repeats", type=int, default=10, help="reshuffled grouped CV runs")
     p.add_argument("--no-mlflow", action="store_true")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO)
@@ -391,6 +530,7 @@ def main() -> None:
             workbook=Path(a.workbook),
             target_brand=a.target,
             n_splits=a.folds,
+            n_cv_repeats=a.repeats,
             seed=a.seed,
             track=not a.no_mlflow,
             strict=a.strict,

@@ -15,6 +15,7 @@ class TrainInput(BaseModel):
     target_brand: str | None = None  # default: the project's target brand
     factors: list[str] = Field(default_factory=lambda: list(FACTORS))
     n_splits: int = Field(default=5, ge=2, le=10)
+    n_cv_repeats: int = Field(default=10, ge=1, le=50)  # reshuffled grouped CV runs
     n_repeats_importance: int = Field(default=10, ge=1, le=100)
     seed: int = 42
     min_positives_per_factor: int = Field(default=10, ge=1)
@@ -41,6 +42,7 @@ class DatasetInfo(BaseModel):
 
 class FoldScore(BaseModel):
     model: str
+    repeat: int = 1
     fold: int
     n_test: int
     n_pos_test: int
@@ -50,13 +52,35 @@ class FoldScore(BaseModel):
     threshold: float
 
 
+class RepeatScore(BaseModel):
+    """One full grouped-CV run, scored on the pooled out-of-fold predictions."""
+
+    model: str
+    repeat: int
+    pr_auc: float
+    brier: float
+    f1: float
+
+
 class ModelSummary(BaseModel):
     model: str
-    pr_auc_mean: float | None
+    pr_auc_mean: float | None  # mean over CV runs of pooled out-of-fold PR-AUC
     pr_auc_sd: float | None
     f1_mean: float
     brier_mean: float
     n_folds: int
+    n_runs: int = 0  # CV runs behind the mean; 0 = folds of a single run
+    wins_vs_baseline: int | None = None  # runs in which this model beat the baseline
+
+
+class FactorRate(BaseModel):
+    factor: str
+    level: str
+    n: int
+    positives: int
+    rate: float
+    ci_low: float | None
+    ci_high: float | None
 
 
 class OddsRatio(BaseModel):
@@ -93,7 +117,11 @@ class TrainOutput(BaseModel):
     positives_per_column: float
     warnings: list[str]
     folds: list[FoldScore]
+    repeats: list[RepeatScore] = []
     summary: list[ModelSummary]
+    m1_c: float | None = None  # L2 strength chosen by inner grouped CV
+    prevalence: float = 0.0
+    factor_rates: list[FactorRate] = []
     chosen: str
     choice_reason: str
     odds_ratios: list[OddsRatio]

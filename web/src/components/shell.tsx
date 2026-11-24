@@ -106,6 +106,16 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
           </span>
           Check accuracy
         </Link>
+        <Link
+          href="/models"
+          onClick={onNavigate}
+          className={item("/models", path.startsWith("/models"))}
+        >
+          <span className="grid size-6 place-items-center rounded-full border text-[0.7rem]">
+            ƒ
+          </span>
+          What drives visibility
+        </Link>
       </div>
 
       <div className="mt-auto flex flex-col gap-3 px-3 pb-2">

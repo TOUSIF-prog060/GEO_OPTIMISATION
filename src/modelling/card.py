@@ -46,16 +46,25 @@ def render_card(o: TrainOutput) -> str:
     lines += [
         "",
         "## Cross-validated performance",
-        "Folds are grouped by question, so no question appears in both training and test.",
+        "Folds are grouped by question, so no question appears in both training and test. "
+        "Grouped CV is repeated with reshuffled folds; each run is scored on its pooled "
+        "out-of-fold predictions. Tuning (M1's L2 strength) and F1 cut-offs use inner grouped "
+        "splits of the training folds only.",
         "",
-        "| Model | PR-AUC (mean ± sd) | F1 | Brier |",
-        "|---|---|---|---|",
+        f"Base rate (share of answers naming the brand): {_pct(o.prevalence, 1)}. "
+        f"A model that ranks at random scores about this PR-AUC.",
+        "",
+        "| Model | PR-AUC (mean ± sd over runs) | Runs beating baseline | F1 | Brier |",
+        "|---|---|---|---|---|",
     ]
     for s in o.summary:
+        wins = "–" if s.wins_vs_baseline is None else f"{s.wins_vs_baseline} of {s.n_runs}"
         lines.append(
-            f"| {s.model} | {_num(s.pr_auc_mean)} ± {_num(s.pr_auc_sd)} | {_num(s.f1_mean)} | "
-            f"{_num(s.brier_mean)} |"
+            f"| {s.model} | {_num(s.pr_auc_mean)} ± {_num(s.pr_auc_sd)} | {wins} | "
+            f"{_num(s.f1_mean)} | {_num(s.brier_mean)} |"
         )
+    if o.m1_c is not None:
+        lines += ["", f"M1 L2 strength chosen by grouped CV on all data: C = {o.m1_c}."]
     lines += ["", f"**Chosen: {o.chosen}.** {o.choice_reason}", ""]
     lines += [
         "## Odds ratios (association in this sample, not cause)",

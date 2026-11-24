@@ -166,9 +166,15 @@ def test_thin_levels_flags_single_question_levels():
 def test_cross_validation_never_splits_a_question_group():
     table, _, _ = build_features(synthetic_sheet(), BRANDS, "Sephora India", FACTORS)
     X, *_ = design_matrix(table, FACTORS)
-    scores = T.cross_validate(table, X, n_splits=4, seed=1)
+    scores, runs = T.cross_validate(table, X, n_splits=4, seed=1, n_repeats=2)
     assert {s.model for s in scores} == set(T.SIMPLICITY_ORDER)
-    assert sum(s.n_test for s in scores if s.model == T.BASELINE) == len(table)
+    for r in (1, 2):  # each run covers every answer exactly once
+        assert sum(s.n_test for s in scores if s.model == T.BASELINE and s.repeat == r) == len(
+            table
+        )
+    assert len(runs) == 2 * len(T.SIMPLICITY_ORDER)
+    for s in scores:  # no question group is split between training and test
+        assert s.n_test < len(table)
 
 
 def test_run_training_end_to_end_finds_planted_engine_effect(workbook, tmp_path):
@@ -177,6 +183,7 @@ def test_run_training_end_to_end_finds_planted_engine_effect(workbook, tmp_path)
             workbook=workbook,
             n_splits=4,
             n_repeats_importance=2,
+            n_cv_repeats=2,
             track=False,
             out_dir=tmp_path / "out",
             raw_dir=tmp_path / "raw",
@@ -188,8 +195,10 @@ def test_run_training_end_to_end_finds_planted_engine_effect(workbook, tmp_path)
     perplexity = ors.get("engine=perplexity")
     assert perplexity is not None and perplexity.ci_high < 1  # planted: Perplexity names it less
     assert out.chosen in T.SIMPLICITY_ORDER
+    assert out.m1_c in T.M1_CS
+    assert {f.factor for f in out.factor_rates} == set(FACTORS)
     for name in ("model_card.md", "models.joblib", "fold_scores.csv", "odds_ratios.csv",
-                 "result.json"):  # fmt: skip
+                 "cv_runs.csv", "result.json"):  # fmt: skip
         assert (tmp_path / "out" / name).exists()
     assert out.dataset.sha256[:10] in out.dataset.snapshot
     assert "association" in (tmp_path / "out" / "model_card.md").read_text(encoding="utf-8")
@@ -201,6 +210,7 @@ def test_mlflow_logging(workbook, tmp_path):
             workbook=workbook,
             n_splits=4,
             n_repeats_importance=1,
+            n_cv_repeats=1,
             track=False,
             out_dir=tmp_path / "out",
             raw_dir=tmp_path / "raw",
@@ -246,3 +256,85 @@ def test_strict_drops_use_strict_false_rows():
 def test_strict_requires_column():
     with pytest.raises(ValueError, match="use_strict"):
         build_features(synthetic_sheet(), BRANDS, "Sephora India", FACTORS, strict=True)
+
+
+def test_choose_model_needs_majority_of_runs():
+    base = ModelSummary(model=T.BASELINE, pr_auc_mean=0.30, pr_auc_sd=0.01, f1_mean=0,
+                        brier_mean=0, n_folds=50, n_runs=10)  # fmt: skip
+    m1 = ModelSummary(model=T.M1, pr_auc_mean=0.31, pr_auc_sd=0.01, f1_mean=0, brier_mean=0,
+                      n_folds=50, n_runs=10, wins_vs_baseline=4)  # fmt: skip
+    assert T.choose_model([base, m1])[0] == T.BASELINE  # higher mean, but loses most runs
+    m1 = m1.model_copy(update={"wins_vs_baseline": 8})
+    assert T.choose_model([base, m1])[0] == T.M1
+
+
+def test_summarise_runs_counts_wins_on_same_folds():
+    from src.modelling.models import RepeatScore
+
+    runs = [
+        RepeatScore(model=T.BASELINE, repeat=1, pr_auc=0.3, brier=0.1, f1=0.2),
+        RepeatScore(model=T.BASELINE, repeat=2, pr_auc=0.5, brier=0.1, f1=0.2),
+        RepeatScore(model=T.M1, repeat=1, pr_auc=0.4, brier=0.1, f1=0.2),
+        RepeatScore(model=T.M1, repeat=2, pr_auc=0.4, brier=0.1, f1=0.2),
+    ]
+    by = {s.model: s for s in T.summarise([], runs)}
+    assert by[T.M1].wins_vs_baseline == 1 and by[T.M1].n_runs == 2
+    assert by[T.M1].pr_auc_mean == pytest.approx(0.4)
+
+
+def test_inner_threshold_ignores_in_sample_fit():
+    """The cut-off comes from inner out-of-fold predictions, never from the test rows."""
+    table, _, _ = build_features(synthetic_sheet(), BRANDS, "Sephora India", FACTORS)
+    X, *_ = design_matrix(table, FACTORS)
+    groups = table["group_id"].to_numpy()
+    tr = np.where(groups != "B01")[0]
+    est = T.make_estimators(0)[T.M2_RF]
+    t = T.inner_threshold(T.M2_RF, est, table, X, tr, groups)
+    assert 0.0 <= t <= 1.0
+
+
+def test_tune_m1_c_picks_from_grid():
+    table, _, _ = build_features(synthetic_sheet(), BRANDS, "Sephora India", FACTORS)
+    X, *_ = design_matrix(table, FACTORS)
+    c = T.tune_m1_c(X, table["y"].to_numpy(), table["group_id"].to_numpy())
+    assert c in T.M1_CS
+
+
+def _fake_run(root, name, analysis_set, chosen, created, sha="a" * 64):
+    import json
+    import os
+
+    d = root / name
+    d.mkdir(parents=True)
+    path = d / "result.json"
+    path.write_text(
+        json.dumps(
+            {
+                "chosen": chosen,
+                "folds": [1, 2],
+                "dataset": {"analysis_set": analysis_set, "sha256": sha},
+            }
+        ),  # fmt: skip
+        encoding="utf-8",
+    )
+    os.utime(path, (created, created))
+
+
+def test_latest_runs_picks_newest_per_set_and_drops_folds(tmp_path):
+    from src.modelling.results import latest_runs, model_insights
+
+    _fake_run(tmp_path, "old", "use_in_model", "Baseline", 100)
+    _fake_run(tmp_path, "new", "use_in_model", "M1", 200)
+    _fake_run(tmp_path, "s", "use_strict", "Baseline", 150)
+    runs = latest_runs(tmp_path)
+    assert runs["use_in_model"]["run"] == "new"
+    assert "folds" not in runs["use_in_model"]
+    out = model_insights(tmp_path)
+    assert out["robustness"]["status"] == "disagrees"
+
+
+def test_model_insights_without_runs(tmp_path):
+    from src.modelling.results import model_insights
+
+    out = model_insights(tmp_path / "missing")
+    assert out["main"] is None and out["robustness"]["status"] == "no_run"

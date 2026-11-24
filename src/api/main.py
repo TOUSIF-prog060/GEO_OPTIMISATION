@@ -570,6 +570,15 @@ def validation_report(sample_version: str, conn: psycopg.Connection = Conn) -> d
 
 # ---------------------------------------------------------------- PDF reports
 
+
+@app.get("/api/models")
+def models() -> dict[str, Any]:
+    """Latest visibility-model results (main and strict sets) with a robustness verdict."""
+    from src.modelling.results import model_insights
+
+    return model_insights()
+
+
 REPORT_DIRS = {"run_report": ROOT_DIR / "reports" / "runs",
                "evaluation_report": ROOT_DIR / "reports" / "evals"}  # fmt: skip
 _REPORT_NAME = re.compile(r"^(run_report|evaluation_report)_[A-Za-z0-9_-]+\.(pdf|html)$")

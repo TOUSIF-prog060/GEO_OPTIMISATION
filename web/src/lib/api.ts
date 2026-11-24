@@ -356,3 +356,75 @@ export const api = {
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body ?? {}) }),
 };
+
+// Visibility models (src/modelling): latest training runs, read from reports/models.
+export type ModelSummary = {
+  model: string;
+  pr_auc_mean: number | null;
+  pr_auc_sd: number | null;
+  f1_mean: number;
+  brier_mean: number;
+  n_folds: number;
+  n_runs: number;
+  wins_vs_baseline: number | null;
+};
+
+export type OddsRatio = { term: string; odds_ratio: number; ci_low: number; ci_high: number; p_value: number };
+
+export type FactorRate = {
+  factor: string;
+  level: string;
+  n: number;
+  positives: number;
+  rate: number;
+  ci_low: number | null;
+  ci_high: number | null;
+};
+
+export type CellRate = {
+  engine: string;
+  question_type: string;
+  n: number;
+  positives: number;
+  rate: number;
+  ci_low: number | null;
+  ci_high: number | null;
+};
+
+export type ModelRun = {
+  run: string;
+  created: number;
+  dataset: {
+    source_file: string;
+    sha256: string;
+    target: string;
+    analysis_set: string;
+    n_rows: number;
+    n_used: number;
+    n_positive: number;
+    n_groups: number;
+    excluded: Record<string, number>;
+    reader_vs_sheet_agreement: number | null;
+  };
+  factors: string[];
+  reference_levels: Record<string, string>;
+  n_columns: number;
+  positives_per_column: number;
+  warnings: string[];
+  summary: ModelSummary[];
+  m1_c: number | null;
+  prevalence: number;
+  factor_rates: FactorRate[];
+  chosen: string;
+  choice_reason: string;
+  odds_ratios: OddsRatio[];
+  importances: { factor: string; pr_auc_drop: number; sd: number }[];
+  baseline_cells: CellRate[];
+  mlflow_run_id: string | null;
+};
+
+export type ModelInsights = {
+  main: ModelRun | null;
+  strict: ModelRun | null;
+  robustness: { status: "no_run" | "unchecked" | "agrees" | "disagrees"; note: string; same_data?: boolean };
+};

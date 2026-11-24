@@ -233,3 +233,16 @@ def test_report_download_rejects_other_files(client: TestClient) -> None:
 
 def test_run_report_needs_run_id(client: TestClient) -> None:
     assert client.post("/api/jobs/report", json={"kind": "run"}).status_code == 400
+
+
+def test_models_endpoint_returns_insights(client: TestClient, monkeypatch) -> None:
+    from src.modelling import results
+
+    monkeypatch.setattr(results, "MODELS_DIR", results.MODELS_DIR / "__none__")
+    monkeypatch.setattr(
+        results, "model_insights",
+        lambda models_dir=None: {"main": None, "strict": None,
+                                 "robustness": {"status": "no_run", "note": "x"}},
+    )  # fmt: skip
+    body = client.get("/api/models").json()
+    assert body["robustness"]["status"] == "no_run"
